@@ -454,7 +454,7 @@ describe('Transfer (e2e)', () => {
         findTransferEvent(events, 'transfer.failed', failedTransfer.id),
       ).toBeDefined();
     } finally {
-      await scenario.payerCollector.close();
+      await scenario.payerCollector?.close();
     }
   });
 
@@ -479,9 +479,8 @@ describe('Transfer (e2e)', () => {
           description: 'Primeiro replay',
         });
 
-      const initialEvents = await firstCollector.waitFor(
-        (events) =>
-          hasTransferEvent(events, 'transfer.completed', firstTransfer.body.id),
+      const initialEvents = await firstCollector.waitFor((events) =>
+        hasTransferEvent(events, 'transfer.completed', firstTransfer.body.id),
       );
 
       lastEventId = initialEvents[initialEvents.length - 1].id;
@@ -512,9 +511,8 @@ describe('Transfer (e2e)', () => {
     });
 
     try {
-      const replayEvents = await replayCollector.waitFor(
-        (events) =>
-          hasTransferEvent(events, 'transfer.completed', secondTransfer.body.id),
+      const replayEvents = await replayCollector.waitFor((events) =>
+        hasTransferEvent(events, 'transfer.completed', secondTransfer.body.id),
       );
 
       const secondTransferEvents = replayEvents.filter(
@@ -589,22 +587,16 @@ async function createConcurrentTransferRace(
 
   try {
     const [firstResponse, secondResponse] = await Promise.all([
-      context.request
-        .post('/transfer')
-        .set('Cookie', payer.cookie)
-        .send({
-          payeeId: firstPayee.user.id,
-          value: 70000,
-          description: 'Primeira corrida',
-        }),
-      context.request
-        .post('/transfer')
-        .set('Cookie', payer.cookie)
-        .send({
-          payeeId: secondPayee.user.id,
-          value: 70000,
-          description: 'Segunda corrida',
-        }),
+      context.request.post('/transfer').set('Cookie', payer.cookie).send({
+        payeeId: firstPayee.user.id,
+        value: 70000,
+        description: 'Primeira corrida',
+      }),
+      context.request.post('/transfer').set('Cookie', payer.cookie).send({
+        payeeId: secondPayee.user.id,
+        value: 70000,
+        description: 'Segunda corrida',
+      }),
     ]);
 
     if (firstResponse.status != 201 || secondResponse.status != 201) {
@@ -643,10 +635,6 @@ function findTransferEvent(
   return events.find(
     (event) => event.event == type && getTransferId(event) == transferId,
   );
-}
-
-function countTransferEvents(events: SseEvent[], transferId: string): number {
-  return events.filter((event) => getTransferId(event) == transferId).length;
 }
 
 function getTransferId(event: SseEvent): string | undefined {

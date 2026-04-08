@@ -129,7 +129,9 @@ function getManagedQueues(app: NestFastifyApplication): {
   paymentRequest: Queue;
   transfer: Queue;
 } {
-  const notification = app.get<Queue>(getQueueToken(NotificationQueueName.Publishing));
+  const notification = app.get<Queue>(
+    getQueueToken(NotificationQueueName.Publishing),
+  );
   const paymentRequest = app.get<Queue>(
     getQueueToken(PaymentRequestQueueName.Expiration),
   );
