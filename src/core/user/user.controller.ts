@@ -53,7 +53,7 @@ export class UserController {
     res.clearCookie('auth_cookie', {
       httpOnly: true,
       secure: true,
-      sameSite: 'none',
+      sameSite: 'strict',
       maxAge: this.expiresIn,
       path: '/',
     });
@@ -97,7 +97,7 @@ export class UserController {
     res.cookie('auth_cookie', token, {
       httpOnly: true,
       secure: true,
-      sameSite: 'none', //used due to the difference between the frontend and backend domains, should be 'lax' or 'strict' if they were the same
+      sameSite: 'strict',
       maxAge: this.expiresIn,
       path: '/',
     });

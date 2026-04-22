@@ -68,7 +68,7 @@ describe('UserController', () => {
       maxAge: 108000000,
       httpOnly: true,
       secure: true,
-      sameSite: 'none',
+      sameSite: 'strict',
       path: '/',
     });
     expect(user).toEqual({ id: 'user-id' });
@@ -102,7 +102,7 @@ describe('UserController', () => {
       maxAge: 108000000,
       httpOnly: true,
       secure: true,
-      sameSite: 'none',
+      sameSite: 'strict',
       path: '/',
     });
     expect(user).toEqual({ id: 'user-id' });
@@ -130,7 +130,7 @@ describe('UserController', () => {
       maxAge: 108000000,
       httpOnly: true,
       secure: true,
-      sameSite: 'none',
+      sameSite: 'strict',
       path: '/',
     });
     expect(user).toEqual({ id: 'user-id' });
@@ -146,7 +146,7 @@ describe('UserController', () => {
     expect(response.clearCookie).toHaveBeenCalledWith('auth_cookie', {
       httpOnly: true,
       secure: true,
-      sameSite: 'none',
+      sameSite: 'strict',
       maxAge: 108000000,
       path: '/',
     });
