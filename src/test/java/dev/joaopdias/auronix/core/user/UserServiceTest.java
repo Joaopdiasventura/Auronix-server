@@ -15,12 +15,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+import dev.joaopdias.auronix.core.account.AccountService;
 import dev.joaopdias.auronix.core.user.dto.AuthResponseDto;
 import dev.joaopdias.auronix.core.user.dto.CreateUserDto;
 import dev.joaopdias.auronix.core.user.dto.LoginUserDto;
@@ -35,6 +38,9 @@ class UserServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private AccountService accountService;
 
     @Mock
     private SecurityService securityService;
@@ -66,7 +72,12 @@ class UserServiceTest {
 
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(userCaptor.capture());
+        verify(accountService).create(USER_ID);
         verify(securityService).createJwt(USER_ID);
+        InOrder inOrder = Mockito.inOrder(userRepository, accountService, securityService);
+        inOrder.verify(userRepository).save(any(User.class));
+        inOrder.verify(accountService).create(USER_ID);
+        inOrder.verify(securityService).createJwt(USER_ID);
         assertThat(userCaptor.getValue().getEmail()).isEqualTo(dto.email());
         assertThat(userCaptor.getValue().getName()).isEqualTo(dto.name());
         assertThat(userCaptor.getValue().getPassword()).isEqualTo("hashed-password");
@@ -87,6 +98,7 @@ class UserServiceTest {
 
         verify(userRepository, never()).save(any());
         verify(securityService, never()).hashPassword(any());
+        verify(accountService, never()).create(any());
     }
 
     @Test

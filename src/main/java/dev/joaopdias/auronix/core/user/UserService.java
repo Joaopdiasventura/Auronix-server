@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import dev.joaopdias.auronix.core.account.AccountService;
 import dev.joaopdias.auronix.core.user.dto.AuthResponseDto;
 import dev.joaopdias.auronix.core.user.dto.CreateUserDto;
 import dev.joaopdias.auronix.core.user.dto.LoginUserDto;
@@ -18,6 +19,9 @@ import dev.joaopdias.auronix.shared.services.SecurityService;
 public class UserService {
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private AccountService accountService;
 
     @Autowired
     private SecurityService securityService;
@@ -32,6 +36,8 @@ public class UserService {
         user.setPassword(securityService.hashPassword(createUserDto.password()));
         
         user = userRepository.save(user);
+
+        accountService.create(user.getId());
         
         String token = securityService.createJwt(user.getId());
 
