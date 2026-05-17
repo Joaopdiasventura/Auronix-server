@@ -1,9 +1,9 @@
-package dev.joaopdias.auronix.core.transaction.events;
+package dev.joaopdias.auronix.shared.notification.dto;
 
 import java.time.Instant;
 import java.util.UUID;
 
-public record TransactionCompletedEvent(
+public record TransactionNotificationDto(
     UUID transactionId,
     long amount,
     UUID payerAccountId,

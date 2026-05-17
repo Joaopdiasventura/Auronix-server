@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
@@ -24,6 +25,8 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
 import dev.joaopdias.auronix.core.account.AccountRepository;
@@ -34,6 +37,7 @@ import dev.joaopdias.auronix.core.transaction.entities.LedgerTransaction;
 import dev.joaopdias.auronix.core.transaction.enums.LedgerTransactionStatus;
 import dev.joaopdias.auronix.core.transaction.enums.LedgerTransactionType;
 import dev.joaopdias.auronix.core.transaction.events.CreateTransferEvent;
+import dev.joaopdias.auronix.core.transaction.events.TransactionCompletedEvent;
 import dev.joaopdias.auronix.core.user.entities.User;
 
 @ExtendWith(MockitoExtension.class)
@@ -166,6 +170,44 @@ class TransactionServiceTest {
     }
 
     @Test
+    void transferPublishesTransactionCompletedAfterCommit() {
+        Instant createdAt = Instant.parse("2026-05-17T00:00:00Z");
+        when(accountRepository.findByUserId(PAYER_USER_ID)).thenReturn(Optional.of(payerAccount));
+        when(accountRepository.findById(PAYEE_ACCOUNT_ID)).thenReturn(Optional.of(payeeAccount));
+        when(transactionRepository.save(any(LedgerTransaction.class))).thenAnswer(invocation -> {
+            LedgerTransaction transaction = invocation.getArgument(0);
+            transaction.setId(TRANSACTION_ID);
+            transaction.setCreatedAt(createdAt);
+            return transaction;
+        });
+
+        TransactionSynchronizationManager.initSynchronization();
+
+        try {
+            transactionService.transfer(new CreateTransferEvent(PAYER_USER_ID, PAYEE_ACCOUNT_ID, 300L));
+
+            verify(transactionProducer, never()).publishTransactionCompleted(any());
+
+            TransactionSynchronizationManager.getSynchronizations()
+                .forEach(TransactionSynchronization::afterCommit);
+
+            ArgumentCaptor<TransactionCompletedEvent> eventCaptor = ArgumentCaptor.forClass(TransactionCompletedEvent.class);
+            verify(transactionProducer).publishTransactionCompleted(eventCaptor.capture());
+
+            assertThat(eventCaptor.getValue()).isEqualTo(new TransactionCompletedEvent(
+                TRANSACTION_ID,
+                300L,
+                PAYER_ACCOUNT_ID,
+                PAYEE_ACCOUNT_ID,
+                createdAt,
+                "transaction.completed"
+            ));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
     void transferThrowsNotFoundWhenPayerAccountIsMissing() {
         when(accountRepository.findByUserId(PAYER_USER_ID)).thenReturn(Optional.empty());
 
@@ -173,6 +215,8 @@ class TransactionServiceTest {
             () -> transactionService.transfer(new CreateTransferEvent(PAYER_USER_ID, PAYEE_ACCOUNT_ID, 300L)),
             HttpStatus.NOT_FOUND
         );
+
+        verifyNoInteractions(transactionProducer);
     }
 
     @Test

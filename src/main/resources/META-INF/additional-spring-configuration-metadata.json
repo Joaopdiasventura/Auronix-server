@@ -1,0 +1,24 @@
+{
+  "properties": [
+    {
+      "name": "app.instance-id",
+      "type": "java.lang.String",
+      "description": "Unique identifier for the current application instance, used to distinguish nodes when running multiple instances."
+    },
+    {
+      "name": "app.cors.allowed-origins",
+      "type": "java.lang.String",
+      "description": "Semicolon-separated list of origins allowed to access the API through CORS."
+    },
+    {
+      "name": "security.jwt.secret",
+      "type": "java.lang.String",
+      "description": "Secret key used to sign and validate JWT tokens."
+    },
+    {
+      "name": "security.jwt.expires-in-minutes",
+      "type": "java.lang.String",
+      "description": "JWT expiration time in minutes."
+    }
+  ]
+}

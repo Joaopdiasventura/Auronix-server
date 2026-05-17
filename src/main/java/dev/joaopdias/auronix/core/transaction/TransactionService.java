@@ -9,6 +9,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
 import dev.joaopdias.auronix.core.account.AccountRepository;
@@ -19,6 +21,7 @@ import dev.joaopdias.auronix.core.transaction.entities.LedgerTransaction;
 import dev.joaopdias.auronix.core.transaction.enums.LedgerTransactionStatus;
 import dev.joaopdias.auronix.core.transaction.enums.LedgerTransactionType;
 import dev.joaopdias.auronix.core.transaction.events.CreateTransferEvent;
+import dev.joaopdias.auronix.core.transaction.events.TransactionCompletedEvent;
 
 @Service
 public class TransactionService {
@@ -101,6 +104,17 @@ public class TransactionService {
 
             accountRepository.save(payerAccount);
             accountRepository.save(payeeAccount);
+
+            TransactionCompletedEvent completedEvent = new TransactionCompletedEvent(
+                transaction.getId(),
+                transaction.getAmount(),
+                payerAccount.getId(),
+                payeeAccount.getId(),
+                transaction.getCreatedAt(),
+                "transaction.completed"
+            );
+
+            publishTransactionCompletedAfterCommit(completedEvent);
         } catch (ObjectOptimisticLockingFailureException exception) {
             throw new ResponseStatusException(
                 HttpStatus.CONFLICT,
@@ -117,6 +131,20 @@ public class TransactionService {
         return transactionRepository
             .findByPayerAccountIdOrPayeeAccountId(account.getId(), account.getId(), pageable)
             .map((t) -> t.toResponseDto());
+    }
+
+    private void publishTransactionCompletedAfterCommit(TransactionCompletedEvent event) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            transactionProducer.publishTransactionCompleted(event);
+            return;
+        }
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                transactionProducer.publishTransactionCompleted(event);
+            }
+        });
     }
 
 }

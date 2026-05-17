@@ -52,14 +52,11 @@ class TransactionProducerTest {
     void publishTransactionCompletedUsesTransactionCompletedRoutingKey() {
         TransactionCompletedEvent event = new TransactionCompletedEvent(
             TRANSACTION_ID,
+            300L,
             PAYER_ACCOUNT_ID,
             PAYEE_ACCOUNT_ID,
-            300L,
-            1000L,
-            700L,
-            200L,
-            500L,
-            Instant.parse("2026-05-17T00:00:00Z")
+            Instant.parse("2026-05-17T00:00:00Z"),
+            "transaction.completed"
         );
 
         transactionProducer.publishTransactionCompleted(event);
