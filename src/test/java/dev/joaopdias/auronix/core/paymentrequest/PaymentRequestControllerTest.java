@@ -23,6 +23,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import dev.joaopdias.auronix.core.account.entities.Account;
 import dev.joaopdias.auronix.core.paymentrequest.dto.CreatePaymentRequestDto;
 import dev.joaopdias.auronix.core.paymentrequest.dto.PaymentRequestResponseDto;
 import dev.joaopdias.auronix.core.user.entities.User;
@@ -33,6 +34,7 @@ import dev.joaopdias.auronix.shared.services.SecurityService;
 @AutoConfigureMockMvc(addFilters = false)
 class PaymentRequestControllerTest {
     private static final UUID USER_ID = UUID.fromString("019b1f0d-9b5c-7c5f-9a57-34e2d66fbd10");
+    private static final UUID ACCOUNT_ID = UUID.fromString("019b1f0d-9b5c-76ab-9a57-34e2d66fbd11");
     private static final UUID PAYMENT_REQUEST_ID = UUID.fromString("019b1f0d-9b5c-76ab-9a57-34e2d66fbd14");
     private static final Instant CREATED_AT = Instant.parse("2026-05-17T00:00:00Z");
 
@@ -45,12 +47,11 @@ class PaymentRequestControllerTest {
     @MockitoBean
     private SecurityService securityService;
 
-    private static User user;
+    private static Account account;
 
     @BeforeEach
     void setUp() {
-        user = new User();
-        user.setId(USER_ID);
+        account = account();
     }
 
     @AfterEach
@@ -74,7 +75,7 @@ class PaymentRequestControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(PAYMENT_REQUEST_ID.toString()))
             .andExpect(jsonPath("$.value").value(300))
-            .andExpect(jsonPath("$.user.id").value(USER_ID.toString()))
+            .andExpect(jsonPath("$.account.id").value(ACCOUNT_ID.toString()))
             .andExpect(jsonPath("$.createdAt").value("2026-05-17T00:00:00Z"));
 
         verify(paymentRequestService).create(org.mockito.ArgumentMatchers.eq(USER_ID), any(CreatePaymentRequestDto.class));
@@ -102,7 +103,7 @@ class PaymentRequestControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(PAYMENT_REQUEST_ID.toString()))
             .andExpect(jsonPath("$.value").value(300))
-            .andExpect(jsonPath("$.user.id").value(USER_ID.toString()));
+            .andExpect(jsonPath("$.account.id").value(ACCOUNT_ID.toString()));
     }
 
     private static UsernamePasswordAuthenticationToken authenticationToken() {
@@ -110,6 +111,20 @@ class PaymentRequestControllerTest {
     }
 
     private static PaymentRequestResponseDto response() {
-        return new PaymentRequestResponseDto(PAYMENT_REQUEST_ID, 300L, user.toResponseDto(), CREATED_AT);
+        return new PaymentRequestResponseDto(PAYMENT_REQUEST_ID, 300L, account.toResponseDto(), CREATED_AT);
+    }
+
+    private static Account account() {
+        User user = new User();
+        user.setId(USER_ID);
+        user.setEmail("joao@example.com");
+        user.setName("Joao Dias");
+        user.setCreatedAt(CREATED_AT);
+
+        Account account = new Account();
+        account.setId(ACCOUNT_ID);
+        account.setUser(user);
+        account.setBalance(1000_00L);
+        return account;
     }
 }

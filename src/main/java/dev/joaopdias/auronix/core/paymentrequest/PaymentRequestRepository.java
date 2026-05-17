@@ -14,7 +14,7 @@ import dev.joaopdias.auronix.core.paymentrequest.entities.PaymentRequest;
 
 @Repository
 public interface PaymentRequestRepository extends JpaRepository<PaymentRequest, UUID> {
-    @Query("select paymentRequest from PaymentRequest paymentRequest join fetch paymentRequest.user where paymentRequest.id = :id and paymentRequest.expiresAt > :now")
+    @Query("select paymentRequest from PaymentRequest paymentRequest join fetch paymentRequest.account where paymentRequest.id = :id and paymentRequest.expiresAt > :now")
     Optional<PaymentRequest> findActiveById(@Param("id") UUID id, @Param("now") Instant now);
 
     @Modifying

@@ -84,8 +84,8 @@ public class LedgerTransaction {
     public TransactionResponseDto toResponseDto() {
         return new TransactionResponseDto(
             this.id,
-            this.payerAccount.getUser().getEmail(),
-            this.payeeAccount.getUser().getEmail(),
+            this.payerAccount.toResponseDto(),
+            this.payeeAccount.toResponseDto(),
             this.amount,
             this.payerBalanceBefore,
             this.payerBalanceAfter,

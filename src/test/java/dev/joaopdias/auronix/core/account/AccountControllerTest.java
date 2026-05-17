@@ -2,6 +2,7 @@ package dev.joaopdias.auronix.core.account;
 
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -55,6 +56,16 @@ class AccountControllerTest {
             .andExpect(jsonPath("$.balance").value(100000))
             .andExpect(jsonPath("$.user.id").value(USER_ID.toString()))
             .andExpect(jsonPath("$.user.email").value("joao@example.com"));
+    }
+
+    @Test
+    void findIdByUserEmailReturnsAccountId() throws Exception {
+        when(accountService.findIdByUserEmail("joao@example.com")).thenReturn(ACCOUNT_ID);
+
+        mockMvc.perform(get("/account/email")
+                .param("email", "joao@example.com"))
+            .andExpect(status().isOk())
+            .andExpect(content().string("\"" + ACCOUNT_ID + "\""));
     }
 
     private static UsernamePasswordAuthenticationToken authenticationToken() {

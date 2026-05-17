@@ -20,16 +20,18 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+import dev.joaopdias.auronix.core.account.AccountService;
+import dev.joaopdias.auronix.core.account.entities.Account;
 import dev.joaopdias.auronix.core.paymentrequest.dto.CreatePaymentRequestDto;
 import dev.joaopdias.auronix.core.paymentrequest.dto.PaymentRequestResponseDto;
 import dev.joaopdias.auronix.core.paymentrequest.entities.PaymentRequest;
 import dev.joaopdias.auronix.core.paymentrequest.events.PaymentRequestExpirationEvent;
-import dev.joaopdias.auronix.core.user.UserService;
 import dev.joaopdias.auronix.core.user.entities.User;
 
 @ExtendWith(MockitoExtension.class)
 class PaymentRequestServiceTest {
     private static final UUID USER_ID = UUID.fromString("019b1f0d-9b5c-7c5f-9a57-34e2d66fbd10");
+    private static final UUID ACCOUNT_ID = UUID.fromString("019b1f0d-9b5c-76ab-9a57-34e2d66fbd11");
     private static final UUID PAYMENT_REQUEST_ID = UUID.fromString("019b1f0d-9b5c-76ab-9a57-34e2d66fbd14");
     private static final Instant CREATED_AT = Instant.parse("2026-05-17T00:00:00Z");
 
@@ -40,22 +42,21 @@ class PaymentRequestServiceTest {
     private PaymentRequestProducer paymentRequestProducer;
 
     @Mock
-    private UserService userService;
+    private AccountService accountService;
 
     @InjectMocks
     private PaymentRequestService paymentRequestService;
 
-    private User user;
+    private Account account;
 
     @BeforeEach
     void setUp() {
-        user = new User();
-        user.setId(USER_ID);
+        account = account();
     }
 
     @Test
     void createSavesPaymentRequestAndPublishesExpiration() {
-        when(userService.findById(USER_ID)).thenReturn(user);
+        when(accountService.findByUserId(USER_ID)).thenReturn(account);
         when(paymentRequestRepository.save(any(PaymentRequest.class))).thenAnswer(invocation -> {
             PaymentRequest paymentRequest = invocation.getArgument(0);
             paymentRequest.setId(PAYMENT_REQUEST_ID);
@@ -69,16 +70,16 @@ class PaymentRequestServiceTest {
         ArgumentCaptor<PaymentRequestExpirationEvent> eventCaptor = ArgumentCaptor.forClass(PaymentRequestExpirationEvent.class);
         verify(paymentRequestRepository).save(paymentRequestCaptor.capture());
         verify(paymentRequestProducer).publishExpiration(eventCaptor.capture());
-        assertThat(paymentRequestCaptor.getValue().getUser()).isSameAs(user);
+        assertThat(paymentRequestCaptor.getValue().getAccount()).isSameAs(account);
         assertThat(paymentRequestCaptor.getValue().getValue()).isEqualTo(300L);
         assertThat(eventCaptor.getValue()).isEqualTo(new PaymentRequestExpirationEvent(PAYMENT_REQUEST_ID));
-        assertThat(response).isEqualTo(new PaymentRequestResponseDto(PAYMENT_REQUEST_ID, 300L, user.toResponseDto(), CREATED_AT));
+        assertThat(response).isEqualTo(new PaymentRequestResponseDto(PAYMENT_REQUEST_ID, 300L, account.toResponseDto(), CREATED_AT));
     }
 
     @Test
     void createRollsBackSavedPaymentRequestWhenExpirationPublishFails() {
         PaymentRequest saved = paymentRequest();
-        when(userService.findById(USER_ID)).thenReturn(user);
+        when(accountService.findByUserId(USER_ID)).thenReturn(account);
         when(paymentRequestRepository.save(any(PaymentRequest.class))).thenReturn(saved);
         org.mockito.Mockito.doThrow(new RuntimeException("rabbit unavailable"))
             .when(paymentRequestProducer)
@@ -90,8 +91,8 @@ class PaymentRequestServiceTest {
     }
 
     @Test
-    void createDoesNotSaveWhenUserIsMissing() {
-        when(userService.findById(USER_ID)).thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND));
+    void createDoesNotSaveWhenAccountIsMissing() {
+        when(accountService.findByUserId(USER_ID)).thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND));
 
         assertStatus(() -> paymentRequestService.create(USER_ID, new CreatePaymentRequestDto(300L)), HttpStatus.NOT_FOUND);
 
@@ -107,7 +108,7 @@ class PaymentRequestServiceTest {
 
         PaymentRequestResponseDto response = paymentRequestService.findById(PAYMENT_REQUEST_ID);
 
-        assertThat(response).isEqualTo(new PaymentRequestResponseDto(PAYMENT_REQUEST_ID, 300L, user.toResponseDto(), CREATED_AT));
+        assertThat(response).isEqualTo(new PaymentRequestResponseDto(PAYMENT_REQUEST_ID, 300L, account.toResponseDto(), CREATED_AT));
     }
 
     @Test
@@ -128,10 +129,24 @@ class PaymentRequestServiceTest {
     private PaymentRequest paymentRequest() {
         PaymentRequest paymentRequest = new PaymentRequest();
         paymentRequest.setId(PAYMENT_REQUEST_ID);
-        paymentRequest.setUser(user);
+        paymentRequest.setAccount(account);
         paymentRequest.setValue(300L);
         paymentRequest.setCreatedAt(CREATED_AT);
         return paymentRequest;
+    }
+
+    private static Account account() {
+        User user = new User();
+        user.setId(USER_ID);
+        user.setEmail("joao@example.com");
+        user.setName("Joao Dias");
+        user.setCreatedAt(CREATED_AT);
+
+        Account account = new Account();
+        account.setId(ACCOUNT_ID);
+        account.setUser(user);
+        account.setBalance(1000_00L);
+        return account;
     }
 
     private static void assertStatus(Runnable action, HttpStatus status) {

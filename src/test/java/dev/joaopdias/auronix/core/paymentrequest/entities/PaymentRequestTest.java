@@ -6,11 +6,13 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 
+import dev.joaopdias.auronix.core.account.entities.Account;
 import dev.joaopdias.auronix.core.paymentrequest.dto.PaymentRequestResponseDto;
 import dev.joaopdias.auronix.core.user.entities.User;
 
 class PaymentRequestTest {
     private static final UUID USER_ID = UUID.fromString("019b1f0d-9b5c-7c5f-9a57-34e2d66fbd10");
+    private static final UUID ACCOUNT_ID = UUID.fromString("019b1f0d-9b5c-76ab-9a57-34e2d66fbd11");
     private static final UUID PAYMENT_REQUEST_ID = UUID.fromString("019b1f0d-9b5c-76ab-9a57-34e2d66fbd14");
 
     @Test
@@ -33,17 +35,23 @@ class PaymentRequestTest {
 
         assertThat(dto.id()).isEqualTo(PAYMENT_REQUEST_ID);
         assertThat(dto.value()).isEqualTo(300L);
-        assertThat(dto.user().id()).isEqualTo(USER_ID);
+        assertThat(dto.account().id()).isEqualTo(ACCOUNT_ID);
         assertThat(dto.createdAt()).isEqualTo(createdAt);
     }
 
     private static PaymentRequest paymentRequest() {
         User user = new User();
         user.setId(USER_ID);
+        user.setEmail("joao@example.com");
+        user.setName("Joao Dias");
+
+        Account account = new Account();
+        account.setId(ACCOUNT_ID);
+        account.setUser(user);
 
         PaymentRequest paymentRequest = new PaymentRequest();
         paymentRequest.setId(PAYMENT_REQUEST_ID);
-        paymentRequest.setUser(user);
+        paymentRequest.setAccount(account);
         paymentRequest.setValue(300L);
         return paymentRequest;
     }

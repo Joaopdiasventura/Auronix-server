@@ -5,8 +5,8 @@ import java.util.UUID;
 
 import org.hibernate.annotations.UuidGenerator;
 
+import dev.joaopdias.auronix.core.account.entities.Account;
 import dev.joaopdias.auronix.core.paymentrequest.dto.PaymentRequestResponseDto;
-import dev.joaopdias.auronix.core.user.entities.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -29,7 +29,7 @@ import lombok.Setter;
 @Table(
     name = "payment_requests",
     indexes = {
-        @Index(name = "idx_payment_requests_user_id", columnList = "fk_user_id"),
+        @Index(name = "idx_payment_requests_user_id", columnList = "fk_account_id"),
         @Index(name = "idx_payment_requests_expires_at", columnList = "expires_at")
     }
 )
@@ -44,8 +44,8 @@ public class PaymentRequest {
     private long value;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "fk_user_id", nullable = false)
-    private User user;
+    @JoinColumn(name = "fk_account_id", nullable = false)
+    private Account account;
 
     @Column(nullable = false, name = "expires_at")
     private Instant expiresAt;
@@ -68,7 +68,7 @@ public class PaymentRequest {
         return new PaymentRequestResponseDto(
             this.id,
             this.value,
-            this.user.toResponseDto(),
+            this.account.toResponseDto(),
             this.createdAt
         );
     }

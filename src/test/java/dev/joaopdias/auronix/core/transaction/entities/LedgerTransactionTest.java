@@ -1,10 +1,9 @@
 package dev.joaopdias.auronix.core.transaction.entities;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import java.time.Instant;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 
 import dev.joaopdias.auronix.core.account.entities.Account;
@@ -45,8 +44,8 @@ class LedgerTransactionTest {
         TransactionResponseDto response = transaction.toResponseDto();
 
         assertThat(response.id()).isEqualTo(TRANSACTION_ID);
-        assertThat(response.payerAccountEmail()).isEqualTo("payer@example.com");
-        assertThat(response.payeeAccountEmail()).isEqualTo("payee@example.com");
+        assertThat(response.payer().email()).isEqualTo("payer@example.com");
+        assertThat(response.payee().email()).isEqualTo("payee@example.com");
         assertThat(response.amount()).isEqualTo(300L);
         assertThat(response.payerBalanceBefore()).isEqualTo(1000L);
         assertThat(response.payerBalanceAfter()).isEqualTo(700L);

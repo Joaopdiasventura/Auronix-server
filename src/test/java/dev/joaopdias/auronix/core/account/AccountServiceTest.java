@@ -117,14 +117,6 @@ class AccountServiceTest {
         assertStatus(() -> accountService.findById(ACCOUNT_ID), HttpStatus.NOT_FOUND);
     }
 
-    @Test
-    void getBalanceReturnsUserAccountBalance() {
-        account.setBalance(12345L);
-        when(accountRepository.findByUserId(USER_ID)).thenReturn(Optional.of(account));
-
-        assertThat(accountService.getBalance(USER_ID)).isEqualTo(12345L);
-    }
-
     private static void assertStatus(Runnable action, HttpStatus status) {
         assertThatThrownBy(action::run)
             .isInstanceOf(ResponseStatusException.class)

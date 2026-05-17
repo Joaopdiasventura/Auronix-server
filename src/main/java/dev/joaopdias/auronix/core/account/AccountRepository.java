@@ -18,6 +18,9 @@ public interface AccountRepository extends JpaRepository<Account, UUID>{
     Optional<Account> findByUserId(UUID userId);
 
     boolean existsByUserId(UUID userId);
+    
+    @Query("select account.id from Account account where account.user.email = :userEmail")
+    Optional<UUID> findIdByUserEmail(@Param("userEmail") String userEmail);
 
     @Query("select account.user.id from Account account where account.id = :accountId")
     Optional<UUID> findUserIdById(@Param("accountId") UUID accountId);

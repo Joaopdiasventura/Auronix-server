@@ -1,24 +1,23 @@
 package dev.joaopdias.auronix.core.transaction;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
-
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import static org.mockito.ArgumentMatchers.any;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -289,8 +288,8 @@ class TransactionServiceTest {
         assertThat(page.getTotalElements()).isEqualTo(1);
         TransactionResponseDto dto = page.getContent().getFirst();
         assertThat(dto.id()).isEqualTo(TRANSACTION_ID);
-        assertThat(dto.payerAccountEmail()).isEqualTo("payer@example.com");
-        assertThat(dto.payeeAccountEmail()).isEqualTo("payee@example.com");
+        assertThat(dto.payer().email()).isEqualTo("payer@example.com");
+        assertThat(dto.payee().email()).isEqualTo("payee@example.com");
         assertThat(dto.amount()).isEqualTo(300L);
     }
 

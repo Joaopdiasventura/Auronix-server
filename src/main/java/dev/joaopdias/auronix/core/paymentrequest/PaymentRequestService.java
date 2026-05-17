@@ -9,12 +9,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import dev.joaopdias.auronix.core.account.AccountService;
+import dev.joaopdias.auronix.core.account.entities.Account;
 import dev.joaopdias.auronix.core.paymentrequest.dto.CreatePaymentRequestDto;
 import dev.joaopdias.auronix.core.paymentrequest.dto.PaymentRequestResponseDto;
 import dev.joaopdias.auronix.core.paymentrequest.entities.PaymentRequest;
 import dev.joaopdias.auronix.core.paymentrequest.events.PaymentRequestExpirationEvent;
-import dev.joaopdias.auronix.core.user.UserService;
-import dev.joaopdias.auronix.core.user.entities.User;
 
 @Service
 public class PaymentRequestService {
@@ -25,14 +25,14 @@ public class PaymentRequestService {
     private PaymentRequestProducer paymentRequestProducer;
 
     @Autowired
-    private UserService userService;
+    private AccountService accountService;
 
     @Transactional
     public PaymentRequestResponseDto create(UUID userId, CreatePaymentRequestDto createPaymentRequestDto) {
-        User user = userService.findById(userId);
+        Account account = accountService.findByUserId(userId);
 
         PaymentRequest paymentRequest = new PaymentRequest();
-        paymentRequest.setUser(user);
+        paymentRequest.setAccount(account);
         paymentRequest.setValue(createPaymentRequestDto.value());
 
         paymentRequest = paymentRequestRepository.save(paymentRequest);

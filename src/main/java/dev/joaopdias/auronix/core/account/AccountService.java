@@ -49,8 +49,8 @@ public class AccountService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conta não encontrada"));
     }
 
-    @Transactional(readOnly = true)
-    public long getBalance(UUID userId) {
-        return findByUserId(userId).getBalance();
+    public UUID findIdByUserEmail(String userEmail) {
+        return accountRepository.findIdByUserEmail(userEmail)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conta não encontrada"));
     }
 }

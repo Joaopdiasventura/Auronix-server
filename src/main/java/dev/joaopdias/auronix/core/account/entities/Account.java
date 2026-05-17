@@ -4,6 +4,7 @@ import java.util.UUID;
 
 import org.hibernate.annotations.UuidGenerator;
 
+import dev.joaopdias.auronix.core.account.dto.AccountResponseDto;
 import dev.joaopdias.auronix.core.user.entities.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -38,4 +39,13 @@ public class Account {
 
     @Version
     private long version;
+
+    public AccountResponseDto toResponseDto() {
+        return new AccountResponseDto(
+            this.id,
+            this.user.getEmail(),
+            this.user.getName(),
+            this.user.getCreatedAt()
+        );
+    }
 }
