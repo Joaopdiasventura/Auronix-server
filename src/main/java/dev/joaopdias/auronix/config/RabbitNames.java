@@ -8,4 +8,9 @@ public final class RabbitNames {
 
     public static final String TRANSACTION_COMPLETED_QUEUE = "auronix.transaction.completed.queue";
     public static final String TRANSACTION_COMPLETED_ROUTING_KEY = "transaction.completed";
+
+    public static final String PAYMENT_REQUEST_EXPIRATION_QUEUE = "auronix.payment-request.expiration.queue";
+    public static final String PAYMENT_REQUEST_EXPIRATION_DELAY_QUEUE = "auronix.payment-request.expiration.delay.queue";
+    public static final String PAYMENT_REQUEST_EXPIRATION_ROUTING_KEY = "payment-request.expiration";
+    public static final String PAYMENT_REQUEST_EXPIRATION_DELAY_ROUTING_KEY = "payment-request.expiration.delay";
 }
