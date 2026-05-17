@@ -48,6 +48,19 @@ public class UserController {
         return authResponseDto.user();
     }
 
+    @PostMapping("/logout")
+    public void logout(HttpServletResponse response) {
+        ResponseCookie cookie = ResponseCookie.from("access_token", "")
+            .httpOnly(true)
+            .secure(true)
+            .sameSite("Strict")
+            .path("/")
+            .maxAge(0)
+            .build();
+
+        response.addHeader("Set-Cookie", cookie.toString());
+    }
+
     @GetMapping()
     public UserResponseDto decodeToken(
         @CookieValue(name = "access_token") String token,
