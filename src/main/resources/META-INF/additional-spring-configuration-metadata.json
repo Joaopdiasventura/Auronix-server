@@ -19,6 +19,16 @@
       "name": "security.jwt.expires-in-minutes",
       "type": "java.lang.String",
       "description": "JWT expiration time in minutes."
+    },
+    {
+      "name": "security.cookie.secure",
+      "type": "java.lang.String",
+      "description": "Defines whether authentication cookies should only be sent over HTTPS connections."
+    },
+    {
+      "name": "security.cookie.same-site",
+      "type": "java.lang.String",
+      "description": "SameSite policy applied to authentication cookies, controlling whether they are sent with cross-site requests."
     }
   ]
 }

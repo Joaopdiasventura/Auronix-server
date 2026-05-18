@@ -133,6 +133,23 @@ public class TransactionService {
             .map((t) -> t.toResponseDto());
     }
 
+    @Transactional(readOnly = true)
+    public TransactionResponseDto findById(UUID userId, UUID transactionId) {
+        Account account = accountRepository.findByUserId(userId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conta não encontrada"));
+
+        LedgerTransaction transaction = transactionRepository.findById(transactionId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Transação não encontrada"));
+
+        boolean isPayer = transaction.getPayerAccount().getId().equals(account.getId());
+        boolean isPayee = transaction.getPayeeAccount().getId().equals(account.getId());
+
+        if (!isPayer && !isPayee) 
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Transação não encontrada");
+
+        return transaction.toResponseDto();
+    }
+
     private void publishTransactionCompletedAfterCommit(TransactionCompletedEvent event) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             transactionProducer.publishTransactionCompleted(event);

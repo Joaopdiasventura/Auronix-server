@@ -7,6 +7,7 @@ import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseCookie;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -51,6 +52,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             SecurityContextHolder.getContext().setAuthentication(authentication);
         } catch (IllegalArgumentException exception) {
             SecurityContextHolder.clearContext();
+            ResponseCookie cookie = ResponseCookie.from("access_token", "")
+                .httpOnly(true)
+                .path("/")
+                .maxAge(0)
+                .build();
+
+            response.addHeader("Set-Cookie", cookie.toString());
             response.setStatus(HttpStatus.FORBIDDEN.value());
             response.setContentType("application/json");
             response.getWriter().write("{\"message\":\"Faça login novamente.\"}");
@@ -67,7 +75,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         if (HttpMethod.OPTIONS.matches(request.getMethod())) return true;
 
         return HttpMethod.POST.matches(request.getMethod())
-            && ("/user".equals(path) || "/user/login".equals(path));
+            && ("/user".equals(path) || "/user/login".equals(path) || "/user/logout".equals(path));
     }
 
     private String getCookieValue(HttpServletRequest request, String name) {

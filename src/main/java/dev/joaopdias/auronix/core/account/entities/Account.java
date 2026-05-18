@@ -45,7 +45,8 @@ public class Account {
             this.id,
             this.user.getEmail(),
             this.user.getName(),
-            this.user.getCreatedAt()
+            this.user.getCreatedAt(),
+            this.balance
         );
     }
 }

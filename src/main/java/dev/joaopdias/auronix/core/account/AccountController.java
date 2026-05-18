@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import dev.joaopdias.auronix.core.account.entities.Account;
+import dev.joaopdias.auronix.core.account.dto.AccountResponseDto;
 import dev.joaopdias.auronix.shared.security.AuthenticatedUser;
 
 @RestController
@@ -20,8 +20,8 @@ public class AccountController {
     private AccountService accountService;
 
     @GetMapping()
-    public Account findById(@AuthenticationPrincipal AuthenticatedUser authentication) {
-        return accountService.findByUserId(authentication.id());
+    public AccountResponseDto findById(@AuthenticationPrincipal AuthenticatedUser authentication) {
+        return accountService.findByUserId(authentication.id()).toResponseDto();
     }
 
     @GetMapping("/email")

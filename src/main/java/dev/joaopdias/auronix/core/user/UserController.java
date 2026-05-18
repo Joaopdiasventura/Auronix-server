@@ -1,6 +1,7 @@
 package dev.joaopdias.auronix.core.user;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseCookie;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.CookieValue;
@@ -28,6 +29,12 @@ public class UserController {
     @Autowired
     private UserService userService;
 
+    @Value("${security.cookie.secure:false}")
+    private boolean secureCookie;
+
+    @Value("${security.cookie.same-site:Strict}")
+    private String cookieSameSite;
+
     @PostMapping()
     public UserResponseDto create(
         @RequestBody @Valid CreateUserDto createUserDto,
@@ -52,8 +59,8 @@ public class UserController {
     public void logout(HttpServletResponse response) {
         ResponseCookie cookie = ResponseCookie.from("access_token", "")
             .httpOnly(true)
-            .secure(true)
-            .sameSite("Strict")
+            .secure(secureCookie)
+            .sameSite(cookieSameSite)
             .path("/")
             .maxAge(0)
             .build();
@@ -87,8 +94,8 @@ public class UserController {
     private void setCookie(String token, HttpServletResponse response){
         ResponseCookie cookie = ResponseCookie.from("access_token", token)
             .httpOnly(true)
-            .secure(true)
-            .sameSite("Strict")
+            .secure(secureCookie)
+            .sameSite(cookieSameSite)
             .path("/")
             .maxAge(60 * 60 * 2)
             .build();

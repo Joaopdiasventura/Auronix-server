@@ -88,6 +88,7 @@ class JwtAuthFilterTest {
         assertThat(response.getStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
         assertThat(response.getContentAsString()).isEqualTo("{\"message\":\"Faça login novamente.\"}");
         assertThat(response.getContentType()).isEqualTo("application/json");
+        assertThat(response.getHeader("Set-Cookie")).contains("access_token=", "Max-Age=0");
         assertThat(chain.getRequest()).isNull();
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
@@ -97,6 +98,7 @@ class JwtAuthFilterTest {
         assertThat(filter.shouldNotFilter(request(HttpMethod.OPTIONS, "/anything"))).isTrue();
         assertThat(filter.shouldNotFilter(request(HttpMethod.POST, "/user"))).isTrue();
         assertThat(filter.shouldNotFilter(request(HttpMethod.POST, "/user/login"))).isTrue();
+        assertThat(filter.shouldNotFilter(request(HttpMethod.POST, "/user/logout"))).isTrue();
     }
 
     @Test

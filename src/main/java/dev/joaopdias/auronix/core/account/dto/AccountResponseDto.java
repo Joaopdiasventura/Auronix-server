@@ -7,7 +7,8 @@ public record AccountResponseDto(
     UUID id,
     String email,
     String name,
-    Instant createdAt
+    Instant createdAt,
+    long balance
 ) {
     
 }
