@@ -54,8 +54,8 @@ class AccountControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(ACCOUNT_ID.toString()))
             .andExpect(jsonPath("$.balance").value(100000))
-            .andExpect(jsonPath("$.user.id").value(USER_ID.toString()))
-            .andExpect(jsonPath("$.user.email").value("joao@example.com"));
+            .andExpect(jsonPath("$.email").value("joao@example.com"))
+            .andExpect(jsonPath("$.name").value("Joao"));
     }
 
     @Test
