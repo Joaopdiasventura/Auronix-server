@@ -9,7 +9,7 @@ services:
       DATABASE_USERNAME: postgres
       DATABASE_PASSWORD: postgres
       RABBITMQ_URL: amqp://user:user@message-br:5672/
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://cache:6379
       JPA_DDL_AUTO: update
       JPA_SHOW_SQL: true
       JPA_FORMAT_SQL: true
@@ -59,7 +59,7 @@ services:
       retries: 15
       start_period: 20s
 
-  redis:
+  cache:
     image: redis:8-alpine
     restart: always
     ports:

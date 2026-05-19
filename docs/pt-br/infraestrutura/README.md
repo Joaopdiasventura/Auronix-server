@@ -7,9 +7,9 @@
 - `server`: constroi a imagem do projeto atual e expoe a porta `8080`.
 - `db`: PostgreSQL 17 Alpine, banco `auronix`, exposto na porta `5432`, com volume nomeado.
 - `message-br`: imagem RabbitMQ 4 management, AMQP em `5672`, interface de gestao em `15672`.
-- `redis`: Redis 8 Alpine exposto em `6379`.
+- `cache`: Redis 8 Alpine exposto em `6379`.
 
-Health checks estao configurados para PostgreSQL, RabbitMQ e Redis, e o servidor aguarda essas dependencias antes de iniciar.
+As verificacoes de saude estao configuradas para PostgreSQL, RabbitMQ e para o servico `cache`, baseado em Redis. Na rede do Compose, o servidor e configurado com `REDIS_URL=redis://cache:6379`.
 
 ## Imagem de Container
 

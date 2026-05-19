@@ -17,7 +17,7 @@ Arquivos Compose identificados no projeto:
 
 | Arquivo | Finalidade |
 | --- | --- |
-| `compose.yaml` | Constroi a imagem do backend e inicia PostgreSQL, RabbitMQ e Redis para desenvolvimento local. |
+| `compose.yaml` | Constroi a imagem do backend e inicia PostgreSQL, RabbitMQ e o servico `cache`, baseado em Redis, para desenvolvimento local. |
 
 Subir o ambiente:
 
@@ -44,9 +44,9 @@ Servicos iniciados pelo Compose:
 | `server` | Construido pelo `Dockerfile` local | `8080:8080` | API Spring Boot |
 | `db` | `postgres:17-alpine` | `5432:5432` | Banco PostgreSQL |
 | `message-br` | `rabbitmq:4-management` | `5672:5672`, `15672:15672` | Broker RabbitMQ e UI de gestao |
-| `redis` | `redis:8-alpine` | `6379:6379` | Instancia Redis para metadados SSE |
+| `cache` | `redis:8-alpine` | `6379:6379` | Instancia Redis para metadados SSE |
 
-O arquivo Compose fornece o ambiente necessario para o container da aplicacao, incluindo URL do banco, credenciais de banco, URL do RabbitMQ, URL do Redis e flags JPA. Os valores sensiveis nesse arquivo local sao orientados a desenvolvimento; use gestao de segredos especifica do ambiente para ambientes compartilhados ou similares a producao.
+O arquivo Compose fornece o ambiente necessario para o container da aplicacao, incluindo URL do banco, credenciais de banco, URL do RabbitMQ, URL do Redis e flags JPA. Na rede do Compose, a API usa `REDIS_URL=redis://cache:6379` para acessar o servico de cache baseado em Redis. Os valores sensiveis nesse arquivo local sao orientados a desenvolvimento; use gestao de segredos especifica do ambiente para ambientes compartilhados ou similares a producao.
 
 Validar a API:
 
@@ -60,10 +60,10 @@ Logs uteis:
 docker compose logs -f server
 docker compose logs -f db
 docker compose logs -f message-br
-docker compose logs -f redis
+docker compose logs -f cache
 ```
 
-Observacao operacional: `db`, `message-br` e `redis` incluem health checks, e o servico `server` aguarda essas dependencias antes de iniciar.
+Observacao operacional: `db`, `message-br` e `cache` incluem health checks. Mantenha nomes de servicos Compose e URLs da aplicacao alinhados ao ajustar nomes de dependencias locais.
 
 ### Opcao de Desenvolvimento Local 2: Spring Boot Standalone
 
@@ -78,7 +78,7 @@ Pre-requisitos:
 Subir apenas as dependencias externas com o arquivo Compose existente:
 
 ```bash
-docker compose up -d db message-br redis
+docker compose up -d db message-br cache
 ```
 
 A configuracao default da aplicacao espera endpoints locais compativeis com esses servicos do Compose:
@@ -90,7 +90,7 @@ A configuracao default da aplicacao espera endpoints locais compativeis com esse
 | `DATABASE_USERNAME` | Usuario de banco de desenvolvimento das configuracoes locais |
 | `DATABASE_PASSWORD` | Senha de banco de desenvolvimento das configuracoes locais |
 | `RABBITMQ_URL` | RabbitMQ em localhost na porta `5672` |
-| `REDIS_URL` | Redis em localhost na porta `6379` |
+| `REDIS_URL` | Redis em localhost na porta `6379` para execucao standalone, ou `redis://cache:6379` dentro da rede do Compose |
 | `JWT_SECRET` | Segredo de assinatura JWT; defina um valor especifico do ambiente fora de uso apenas local |
 | `CLIENT_URLS` | Origens CORS, com default para a origem frontend local configurada na aplicacao |
 
@@ -124,7 +124,7 @@ Validar a API:
 curl http://localhost:8080/actuator/health
 ```
 
-Observacao importante: com Spring Boot standalone, o processo Java roda diretamente no host enquanto PostgreSQL, RabbitMQ e Redis podem rodar separadamente. Com Docker Compose, a API e as dependencias rodam juntas como containers usando os nomes de rede definidos em `compose.yaml`.
+Observacao importante: com Spring Boot standalone, o processo Java roda diretamente no host enquanto PostgreSQL, RabbitMQ e Redis podem rodar separadamente. Com Docker Compose, a API e as dependencias rodam juntas como containers usando os nomes de rede definidos em `compose.yaml`, incluindo `cache` para Redis.
 
 ## Build e Testes
 
