@@ -1,0 +1,10 @@
+aws_region  = "us-east-1"
+environment = "dev"
+
+cluster_name    = "auronix"
+cluster_version = "1.31"
+
+node_instance_types = ["t3.micro"]
+node_min_size       = 1
+node_desired_size   = 3
+node_max_size       = 3
