@@ -1,16 +1,16 @@
-name: CI/CD
+name: Continuous Integration and Deployment
 
 on:
   push:
     branches:
-      - "**"
+      - '**'
 
 permissions:
   contents: read
   packages: write
 
 env:
-  IMAGE_NAME: jpplay/auditex-server
+  IMAGE_NAME: docker.io/jpplay/auronix-server
   JAVA_VERSION: "26"
 
 concurrency:
@@ -51,7 +51,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image_digest: ${{ steps.build.outputs.digest }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -62,6 +61,7 @@ jobs:
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
+          registry: docker.io
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
@@ -78,5 +78,50 @@ jobs:
         id: build
         uses: docker/build-push-action@v6
         with:
+          context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha,scope=auronix-server
+          cache-to: type=gha,mode=max,scope=auronix-server
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    name: Deploy Application
+    runs-on: self-hosted
+    needs: publish
+    timeout-minutes: 15
+    env:
+      DOTENV: ${{ secrets.DOTENV }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Write dotenv to file
+        run: |
+          printf '%s\n' "$DOTENV" > .env
+          chmod 600 .env
+
+      - name: Login to Docker Hub
+        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+      - name: Pull images
+        run: docker pull "$IMAGE_NAME@${{ needs.publish.outputs.image_digest }}"
+
+      - name: Deploy server container
+        run: |
+          docker rm -f auronix-server || true
+          docker run -d \
+            --name auronix-server \
+            --restart=always \
+            --network cloudflare_tunnel \
+            --env-file .env \
+            --security-opt no-new-privileges:true \
+            --cap-drop ALL \
+            --memory=1024m \
+            --memory-swap=1024m \
+            --cpus=1.0 \
+            --pids-limit=256 \
+            "$IMAGE_NAME@${{ needs.publish.outputs.image_digest }}"
+
+      - name: Remove unused images
+        run: docker image prune -f -a
