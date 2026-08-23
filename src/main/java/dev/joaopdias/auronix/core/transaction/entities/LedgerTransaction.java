@@ -9,6 +9,7 @@ import dev.joaopdias.auronix.core.account.entities.Account;
 import dev.joaopdias.auronix.core.transaction.dto.TransactionResponseDto;
 import dev.joaopdias.auronix.core.transaction.enums.LedgerTransactionStatus;
 import dev.joaopdias.auronix.core.transaction.enums.LedgerTransactionType;
+import jakarta.persistence.CheckConstraint;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -35,6 +36,13 @@ import lombok.Setter;
     indexes = {
         @Index(name = "idx_ledger_payer_account_created_at", columnList = "fk_payer_account_id, created_at"),
         @Index(name = "idx_ledger_payee_account_created_at", columnList = "fk_payee_account_id, created_at")
+    },
+    check = {
+        @CheckConstraint(name = "ck_ledger_amount_positive", constraint = "amount > 0"),
+        @CheckConstraint(name = "ck_ledger_payer_balance_before_non_negative", constraint = "payer_balance_before >= 0"),
+        @CheckConstraint(name = "ck_ledger_payer_balance_after_non_negative", constraint = "payer_balance_after >= 0"),
+        @CheckConstraint(name = "ck_ledger_payee_balance_before_non_negative", constraint = "payee_balance_before >= 0"),
+        @CheckConstraint(name = "ck_ledger_payee_balance_after_non_negative", constraint = "payee_balance_after >= 0")
     }
 )
 public class LedgerTransaction {

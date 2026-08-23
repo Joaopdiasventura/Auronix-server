@@ -7,6 +7,7 @@ import org.hibernate.annotations.UuidGenerator;
 
 import dev.joaopdias.auronix.core.account.entities.Account;
 import dev.joaopdias.auronix.core.paymentrequest.dto.PaymentRequestResponseDto;
+import jakarta.persistence.CheckConstraint;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -31,6 +32,10 @@ import lombok.Setter;
     indexes = {
         @Index(name = "idx_payment_requests_user_id", columnList = "fk_account_id"),
         @Index(name = "idx_payment_requests_expires_at", columnList = "expires_at")
+    },
+    check = {
+        @CheckConstraint(name = "ck_payment_requests_value_positive", constraint = "value > 0"),
+        @CheckConstraint(name = "ck_payment_requests_expires_after_created", constraint = "expires_at > created_at")
     }
 )
 public class PaymentRequest {

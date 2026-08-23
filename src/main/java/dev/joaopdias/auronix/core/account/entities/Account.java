@@ -6,6 +6,7 @@ import org.hibernate.annotations.UuidGenerator;
 
 import dev.joaopdias.auronix.core.account.dto.AccountResponseDto;
 import dev.joaopdias.auronix.core.user.entities.User;
+import jakarta.persistence.CheckConstraint;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -24,7 +25,10 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "accounts")
+@Table(
+    name = "accounts",
+    check = @CheckConstraint(name = "ck_accounts_balance_non_negative", constraint = "balance >= 0")
+)
 public class Account {
     @Id
     @UuidGenerator(style = UuidGenerator.Style.VERSION_7)
