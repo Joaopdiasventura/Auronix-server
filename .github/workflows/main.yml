@@ -43,6 +43,19 @@ jobs:
       - name: Run tests
         run: ./mvnw -B test
 
+      - name: Require Testcontainers integration tests
+        run: |
+          docker ps
+          ./mvnw -B -Dtest=FinancePostgresIntegrationTest test
+          report="target/surefire-reports/TEST-dev.joaopdias.auronix.integration.FinancePostgresIntegrationTest.xml"
+          test -f "$report"
+          skipped="$(grep -o 'skipped="[0-9]*"' "$report" | head -n 1 | cut -d '"' -f 2)"
+          failures="$(grep -o 'failures="[0-9]*"' "$report" | head -n 1 | cut -d '"' -f 2)"
+          errors="$(grep -o 'errors="[0-9]*"' "$report" | head -n 1 | cut -d '"' -f 2)"
+          test "$skipped" = "0"
+          test "$failures" = "0"
+          test "$errors" = "0"
+
       - name: Build application
         run: ./mvnw -B package -DskipTests
 
