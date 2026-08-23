@@ -9,5 +9,13 @@ spec:
     spec:
       containers:
         - name: server
-          image: server-server:latest
-          imagePullPolicy: Never
+          image: auronix-server:kind-v1
+          imagePullPolicy: IfNotPresent
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auronix-server
+  namespace: auronix
+spec:
+  type: ClusterIP

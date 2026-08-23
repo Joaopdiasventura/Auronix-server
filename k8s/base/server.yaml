@@ -19,6 +19,13 @@ spec:
         app.kubernetes.io/component: server
     spec:
       terminationGracePeriodSeconds: 45
+      initContainers:
+        - name: wait-for-dependencies
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until nc -z postgres 5432 && nc -z rabbitmq 5672 && nc -z redis 6379; do sleep 2; done
       containers:
         - name: server
           image: jpplay/auronix-server@sha256:0000000000000000000000000000000000000000000000000000000000000000
@@ -97,6 +104,16 @@ spec:
                 configMapKeyRef:
                   name: auronix-config
                   key: MANAGEMENT_HEALTH_PROBES_ENABLED
+            - name: MANAGEMENT_HEALTH_LIVENESS_INCLUDE
+              valueFrom:
+                configMapKeyRef:
+                  name: auronix-config
+                  key: MANAGEMENT_HEALTH_LIVENESS_INCLUDE
+            - name: MANAGEMENT_HEALTH_READINESS_INCLUDE
+              valueFrom:
+                configMapKeyRef:
+                  name: auronix-config
+                  key: MANAGEMENT_HEALTH_READINESS_INCLUDE
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -116,6 +133,13 @@ spec:
                   - sh
                   - -c
                   - sleep 10
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            failureThreshold: 120
+            periodSeconds: 5
+            timeoutSeconds: 5
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness

@@ -5,4 +5,4 @@ metadata:
   namespace: auronix
 spec:
   minReplicas: 1
-  maxReplicas: 2
+  maxReplicas: 3

@@ -16,3 +16,5 @@ data:
   JPA_SHOW_SQL: "false"
   JPA_FORMAT_SQL: "false"
   MANAGEMENT_HEALTH_PROBES_ENABLED: "true"
+  MANAGEMENT_HEALTH_LIVENESS_INCLUDE: "livenessState"
+  MANAGEMENT_HEALTH_READINESS_INCLUDE: "readinessState,db,rabbit,redis"
