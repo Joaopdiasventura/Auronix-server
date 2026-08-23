@@ -8,8 +8,9 @@ metadata:
 data:
   PORT: "8080"
   DATABASE_URL: "jdbc:postgresql://postgres:5432/auronix"
-  RABBITMQ_URL: "amqp://user:user@rabbitmq:5672/"
+  RABBITMQ_URL: "amqp://rabbitmq:5672/"
   REDIS_URL: "redis://redis:6379"
-  JPA_DDL_AUTO: "update"
-  JPA_SHOW_SQL: "true"
-  JPA_FORMAT_SQL: "true"
+  JPA_DDL_AUTO: "validate"
+  JPA_SHOW_SQL: "false"
+  JPA_FORMAT_SQL: "false"
+  MANAGEMENT_HEALTH_PROBES_ENABLED: "true"

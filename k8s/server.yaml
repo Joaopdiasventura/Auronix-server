@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/name: auronix
     app.kubernetes.io/component: server
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app.kubernetes.io/name: auronix
@@ -20,8 +20,8 @@ spec:
     spec:
       containers:
         - name: server
-          image: jpplay/auronix-server:latest
-          imagePullPolicy: Always
+          image: jpplay/auronix-server@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 8080
@@ -51,6 +51,16 @@ spec:
                 configMapKeyRef:
                   name: auronix-config
                   key: RABBITMQ_URL
+            - name: RABBITMQ_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: auronix-secrets
+                  key: RABBITMQ_USERNAME
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: auronix-secrets
+                  key: RABBITMQ_PASSWORD
             - name: REDIS_URL
               valueFrom:
                 configMapKeyRef:
@@ -71,6 +81,11 @@ spec:
                 configMapKeyRef:
                   name: auronix-config
                   key: JPA_FORMAT_SQL
+            - name: MANAGEMENT_HEALTH_PROBES_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: auronix-config
+                  key: MANAGEMENT_HEALTH_PROBES_ENABLED
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -85,7 +100,7 @@ spec:
               memory: 1Gi
           readinessProbe:
             httpGet:
-              path: /actuator/health
+              path: /actuator/health/readiness
               port: http
             initialDelaySeconds: 30
             periodSeconds: 10
@@ -93,7 +108,7 @@ spec:
             failureThreshold: 6
           livenessProbe:
             httpGet:
-              path: /actuator/health
+              path: /actuator/health/liveness
               port: http
             initialDelaySeconds: 60
             periodSeconds: 10

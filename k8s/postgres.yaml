@@ -1,5 +1,5 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: postgres
   namespace: auronix
@@ -7,6 +7,7 @@ metadata:
     app.kubernetes.io/name: auronix
     app.kubernetes.io/component: postgres
 spec:
+  serviceName: postgres
   replicas: 1
   selector:
     matchLabels:
@@ -60,9 +61,15 @@ spec:
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
-      volumes:
-        - name: postgres-data
-          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
 ---
 apiVersion: v1
 kind: Service
@@ -73,6 +80,7 @@ metadata:
     app.kubernetes.io/name: auronix
     app.kubernetes.io/component: postgres
 spec:
+  clusterIP: None
   selector:
     app.kubernetes.io/name: auronix
     app.kubernetes.io/component: postgres

@@ -73,7 +73,6 @@ jobs:
           images: ${{ env.IMAGE_NAME }}
           tags: |
             type=sha,format=long
-            type=raw,value=latest,enable=${{ github.ref_name == 'main' }}
 
       - name: Build and push
         id: build
