@@ -18,6 +18,7 @@ spec:
         app.kubernetes.io/name: auronix
         app.kubernetes.io/component: server
     spec:
+      terminationGracePeriodSeconds: 45
       containers:
         - name: server
           image: jpplay/auronix-server@sha256:0000000000000000000000000000000000000000000000000000000000000000
@@ -31,6 +32,16 @@ spec:
                 configMapKeyRef:
                   name: auronix-config
                   key: PORT
+            - name: SERVER_SHUTDOWN
+              valueFrom:
+                configMapKeyRef:
+                  name: auronix-config
+                  key: SERVER_SHUTDOWN
+            - name: SHUTDOWN_TIMEOUT
+              valueFrom:
+                configMapKeyRef:
+                  name: auronix-config
+                  key: SHUTDOWN_TIMEOUT
             - name: DATABASE_URL
               valueFrom:
                 configMapKeyRef:
@@ -98,6 +109,13 @@ spec:
             limits:
               cpu: 750m
               memory: 1Gi
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - sh
+                  - -c
+                  - sleep 10
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
