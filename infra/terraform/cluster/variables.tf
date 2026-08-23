@@ -28,6 +28,24 @@ variable "cluster_service_ipv4_cidr" {
   default     = "172.20.0.0/16"
 }
 
+variable "cluster_endpoint_public_access" {
+  description = "Whether the EKS API endpoint is reachable from public networks."
+  type        = bool
+  default     = false
+}
+
+variable "cluster_endpoint_private_access" {
+  description = "Whether the EKS API endpoint is reachable from inside the VPC."
+  type        = bool
+  default     = true
+}
+
+variable "cluster_endpoint_public_access_cidrs" {
+  description = "CIDR ranges allowed to reach the public EKS API endpoint when public access is enabled."
+  type        = list(string)
+  default     = []
+}
+
 variable "vpc_cidr" {
   description = "CIDR block for the VPC."
   type        = string
@@ -50,6 +68,18 @@ variable "node_instance_types" {
   description = "EC2 instance types for the managed node group."
   type        = list(string)
   default     = ["t3.small"]
+}
+
+variable "node_https_egress_cidrs" {
+  description = "CIDR ranges that EKS nodes can reach over HTTPS."
+  type        = list(string)
+  default     = []
+}
+
+variable "node_security_group_additional_rules" {
+  description = "Additional EKS node security group rules merged with the project defaults."
+  type        = any
+  default     = {}
 }
 
 variable "node_min_size" {
