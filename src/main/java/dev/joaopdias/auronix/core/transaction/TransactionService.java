@@ -9,8 +9,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
 import dev.joaopdias.auronix.core.account.AccountRepository;
@@ -53,6 +51,7 @@ public class TransactionService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conta de destino não encontrada"));
 
         CreateTransferEvent event = new CreateTransferEvent(
+            UUID.randomUUID(),
             payerUserId,
             createTransferDto.payeeAccountId(),
             createTransferDto.amount()
@@ -106,6 +105,7 @@ public class TransactionService {
             accountRepository.save(payeeAccount);
 
             TransactionCompletedEvent completedEvent = new TransactionCompletedEvent(
+                UUID.randomUUID(),
                 transaction.getId(),
                 transaction.getAmount(),
                 payerAccount.getId(),
@@ -114,7 +114,7 @@ public class TransactionService {
                 "transaction.completed"
             );
 
-            publishTransactionCompletedAfterCommit(completedEvent);
+            transactionProducer.publishTransactionCompleted(completedEvent);
         } catch (ObjectOptimisticLockingFailureException exception) {
             throw new ResponseStatusException(
                 HttpStatus.CONFLICT,
@@ -148,20 +148,6 @@ public class TransactionService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Transação não encontrada");
 
         return transaction.toResponseDto();
-    }
-
-    private void publishTransactionCompletedAfterCommit(TransactionCompletedEvent event) {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            transactionProducer.publishTransactionCompleted(event);
-            return;
-        }
-
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                transactionProducer.publishTransactionCompleted(event);
-            }
-        });
     }
 
 }

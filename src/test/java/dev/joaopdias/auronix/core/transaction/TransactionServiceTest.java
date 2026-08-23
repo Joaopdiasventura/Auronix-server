@@ -24,8 +24,6 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
 import dev.joaopdias.auronix.core.account.AccountRepository;
@@ -77,7 +75,10 @@ class TransactionServiceTest {
 
         ArgumentCaptor<CreateTransferEvent> eventCaptor = ArgumentCaptor.forClass(CreateTransferEvent.class);
         verify(transactionProducer).publishCreateTransfer(eventCaptor.capture());
-        assertThat(eventCaptor.getValue()).isEqualTo(new CreateTransferEvent(PAYER_USER_ID, PAYEE_ACCOUNT_ID, 300L));
+        assertThat(eventCaptor.getValue().eventId()).isNotNull();
+        assertThat(eventCaptor.getValue().payerUserId()).isEqualTo(PAYER_USER_ID);
+        assertThat(eventCaptor.getValue().payeeAccountId()).isEqualTo(PAYEE_ACCOUNT_ID);
+        assertThat(eventCaptor.getValue().amount()).isEqualTo(300L);
     }
 
     @Test
@@ -169,7 +170,7 @@ class TransactionServiceTest {
     }
 
     @Test
-    void transferPublishesTransactionCompletedAfterCommit() {
+    void transferEnqueuesTransactionCompletedWithFinancialState() {
         Instant createdAt = Instant.parse("2026-05-17T00:00:00Z");
         when(accountRepository.findByUserId(PAYER_USER_ID)).thenReturn(Optional.of(payerAccount));
         when(accountRepository.findById(PAYEE_ACCOUNT_ID)).thenReturn(Optional.of(payeeAccount));
@@ -180,30 +181,18 @@ class TransactionServiceTest {
             return transaction;
         });
 
-        TransactionSynchronizationManager.initSynchronization();
+        transactionService.transfer(new CreateTransferEvent(PAYER_USER_ID, PAYEE_ACCOUNT_ID, 300L));
 
-        try {
-            transactionService.transfer(new CreateTransferEvent(PAYER_USER_ID, PAYEE_ACCOUNT_ID, 300L));
+        ArgumentCaptor<TransactionCompletedEvent> eventCaptor = ArgumentCaptor.forClass(TransactionCompletedEvent.class);
+        verify(transactionProducer).publishTransactionCompleted(eventCaptor.capture());
 
-            verify(transactionProducer, never()).publishTransactionCompleted(any());
-
-            TransactionSynchronizationManager.getSynchronizations()
-                .forEach(TransactionSynchronization::afterCommit);
-
-            ArgumentCaptor<TransactionCompletedEvent> eventCaptor = ArgumentCaptor.forClass(TransactionCompletedEvent.class);
-            verify(transactionProducer).publishTransactionCompleted(eventCaptor.capture());
-
-            assertThat(eventCaptor.getValue()).isEqualTo(new TransactionCompletedEvent(
-                TRANSACTION_ID,
-                300L,
-                PAYER_ACCOUNT_ID,
-                PAYEE_ACCOUNT_ID,
-                createdAt,
-                "transaction.completed"
-            ));
-        } finally {
-            TransactionSynchronizationManager.clearSynchronization();
-        }
+        assertThat(eventCaptor.getValue().eventId()).isNotNull();
+        assertThat(eventCaptor.getValue().transactionId()).isEqualTo(TRANSACTION_ID);
+        assertThat(eventCaptor.getValue().amount()).isEqualTo(300L);
+        assertThat(eventCaptor.getValue().payerAccountId()).isEqualTo(PAYER_ACCOUNT_ID);
+        assertThat(eventCaptor.getValue().payeeAccountId()).isEqualTo(PAYEE_ACCOUNT_ID);
+        assertThat(eventCaptor.getValue().createdAt()).isEqualTo(createdAt);
+        assertThat(eventCaptor.getValue().type()).isEqualTo("transaction.completed");
     }
 
     @Test

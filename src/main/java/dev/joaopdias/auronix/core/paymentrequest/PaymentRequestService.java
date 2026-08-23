@@ -37,12 +37,7 @@ public class PaymentRequestService {
 
         paymentRequest = paymentRequestRepository.save(paymentRequest);
 
-        try {
-            paymentRequestProducer.publishExpiration(new PaymentRequestExpirationEvent(paymentRequest.getId()));
-        } catch (RuntimeException exception) {
-            paymentRequestRepository.delete(paymentRequest);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Nao foi possivel criar a cobranca", exception);
-        }
+        paymentRequestProducer.publishExpiration(new PaymentRequestExpirationEvent(UUID.randomUUID(), paymentRequest.getId()));
 
         return paymentRequest.toResponseDto();
     }

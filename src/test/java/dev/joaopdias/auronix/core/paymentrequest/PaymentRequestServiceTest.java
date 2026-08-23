@@ -72,12 +72,13 @@ class PaymentRequestServiceTest {
         verify(paymentRequestProducer).publishExpiration(eventCaptor.capture());
         assertThat(paymentRequestCaptor.getValue().getAccount()).isSameAs(account);
         assertThat(paymentRequestCaptor.getValue().getValue()).isEqualTo(300L);
-        assertThat(eventCaptor.getValue()).isEqualTo(new PaymentRequestExpirationEvent(PAYMENT_REQUEST_ID));
+        assertThat(eventCaptor.getValue().eventId()).isNotNull();
+        assertThat(eventCaptor.getValue().paymentRequestId()).isEqualTo(PAYMENT_REQUEST_ID);
         assertThat(response).isEqualTo(new PaymentRequestResponseDto(PAYMENT_REQUEST_ID, 300L, account.toResponseDto(), CREATED_AT));
     }
 
     @Test
-    void createRollsBackSavedPaymentRequestWhenExpirationPublishFails() {
+    void createPropagatesOutboxFailureWithoutManualCompensation() {
         PaymentRequest saved = paymentRequest();
         when(accountService.findByUserId(USER_ID)).thenReturn(account);
         when(paymentRequestRepository.save(any(PaymentRequest.class))).thenReturn(saved);
@@ -85,9 +86,11 @@ class PaymentRequestServiceTest {
             .when(paymentRequestProducer)
             .publishExpiration(any(PaymentRequestExpirationEvent.class));
 
-        assertStatus(() -> paymentRequestService.create(USER_ID, new CreatePaymentRequestDto(300L)), HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThatThrownBy(() -> paymentRequestService.create(USER_ID, new CreatePaymentRequestDto(300L)))
+            .isInstanceOf(RuntimeException.class)
+            .hasMessage("rabbit unavailable");
 
-        verify(paymentRequestRepository).delete(saved);
+        verify(paymentRequestRepository, never()).delete(saved);
     }
 
     @Test
