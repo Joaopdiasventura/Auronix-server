@@ -16,6 +16,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+
 @ExtendWith(MockitoExtension.class)
 class IdempotentMessageServiceTest {
     private static final UUID EVENT_ID = UUID.fromString("019b1f0d-9b5c-76ab-9a57-34e2d66fbd16");
@@ -25,11 +27,14 @@ class IdempotentMessageServiceTest {
     private ProcessedEventRepository processedEventRepository;
 
     private IdempotentMessageService idempotentMessageService;
+    private SimpleMeterRegistry meterRegistry;
 
     @BeforeEach
     void setUp() {
+        meterRegistry = new SimpleMeterRegistry();
         idempotentMessageService = new IdempotentMessageService();
         ReflectionTestUtils.setField(idempotentMessageService, "processedEventRepository", processedEventRepository);
+        ReflectionTestUtils.setField(idempotentMessageService, "meterRegistry", meterRegistry);
     }
 
     @Test
@@ -51,6 +56,7 @@ class IdempotentMessageServiceTest {
 
         assertThat(processed).isTrue();
         assertThat(executions).hasValue(1);
+        assertThat(meterRegistry.counter("rabbitmq_messages_processed_total").count()).isEqualTo(1);
     }
 
     @Test
@@ -72,6 +78,7 @@ class IdempotentMessageServiceTest {
 
         assertThat(processed).isFalse();
         assertThat(executions).hasValue(0);
+        assertThat(meterRegistry.counter("rabbitmq_duplicate_messages_total").count()).isEqualTo(1);
     }
 
     @Test

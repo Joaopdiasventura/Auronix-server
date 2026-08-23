@@ -12,6 +12,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import io.micrometer.core.instrument.MeterRegistry;
+
 @Component
 @ConditionalOnProperty(name = "app.outbox.enabled", havingValue = "true", matchIfMissing = true)
 public class OutboxPublisher {
@@ -20,6 +22,9 @@ public class OutboxPublisher {
 
     @Autowired
     private RabbitTemplate rabbitTemplate;
+
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     @Value("${app.outbox.batch-size:50}")
     private int batchSize;
@@ -34,8 +39,10 @@ public class OutboxPublisher {
             OutboxEvent event = outboxService.findById(id);
             rabbitTemplate.send(event.getExchange(), event.getRoutingKey(), message(event));
             outboxService.markPublished(id);
+            meterRegistry.counter("outbox_published_total").increment();
         } catch (RuntimeException exception) {
             outboxService.markFailed(id);
+            meterRegistry.counter("outbox_publish_failures_total").increment();
         }
     }
 

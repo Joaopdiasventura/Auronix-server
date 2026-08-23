@@ -21,6 +21,8 @@ import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+
 @ExtendWith(MockitoExtension.class)
 class OutboxPublisherTest {
     private static final UUID OUTBOX_ID = UUID.fromString("019b1f0d-9b5c-76ab-9a57-34e2d66fbd10");
@@ -34,12 +36,15 @@ class OutboxPublisherTest {
     private RabbitTemplate rabbitTemplate;
 
     private OutboxPublisher outboxPublisher;
+    private SimpleMeterRegistry meterRegistry;
 
     @BeforeEach
     void setUp() {
+        meterRegistry = new SimpleMeterRegistry();
         outboxPublisher = new OutboxPublisher();
         ReflectionTestUtils.setField(outboxPublisher, "outboxService", outboxService);
         ReflectionTestUtils.setField(outboxPublisher, "rabbitTemplate", rabbitTemplate);
+        ReflectionTestUtils.setField(outboxPublisher, "meterRegistry", meterRegistry);
         ReflectionTestUtils.setField(outboxPublisher, "batchSize", 10);
     }
 
@@ -59,6 +64,7 @@ class OutboxPublisherTest {
         assertThat((String) message.getMessageProperties().getHeader("eventId")).isEqualTo(EVENT_ID.toString());
         assertThat((String) message.getMessageProperties().getHeader("eventType")).isEqualTo("transfer.create");
         assertThat((String) message.getMessageProperties().getHeader("aggregateId")).isEqualTo(AGGREGATE_ID.toString());
+        assertThat(meterRegistry.counter("outbox_published_total").count()).isEqualTo(1);
     }
 
     @Test
@@ -72,6 +78,7 @@ class OutboxPublisherTest {
         outboxPublisher.publishPending();
 
         verify(outboxService).markFailed(OUTBOX_ID);
+        assertThat(meterRegistry.counter("outbox_publish_failures_total").count()).isEqualTo(1);
     }
 
     private static OutboxEvent event() {
