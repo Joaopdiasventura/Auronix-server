@@ -1,8 +1,14 @@
 package dev.joaopdias.auronix.core.transaction;
 
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -63,17 +69,32 @@ public class TransactionService {
     @Transactional
     public void transfer(CreateTransferEvent event) {
         try {
-            Account payerAccount = accountRepository.findByUserId(event.payerUserId())
+            if (event.amount() <= 0)
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Valor inválido");
+
+            UUID payerAccountId = accountRepository.findIdByUserId(event.payerUserId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conta de origem não encontrada"));
 
-            Account payeeAccount = accountRepository.findById(event.payeeAccountId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conta de destino não encontrada"));
-
-            if (payerAccount.getId().equals(payeeAccount.getId())) 
+            if (payerAccountId.equals(event.payeeAccountId()))
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Não é possível transferir para a própria conta");
-            
-            if (event.amount() <= 0) 
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Valor inválido");
+
+            List<UUID> accountIds = List.of(payerAccountId, event.payeeAccountId())
+                .stream()
+                .sorted(Comparator.naturalOrder())
+                .toList();
+
+            Map<UUID, Account> lockedAccounts = accountRepository.findAllByIdInForUpdate(accountIds)
+                .stream()
+                .collect(Collectors.toMap(Account::getId, Function.identity()));
+
+            Account payerAccount = lockedAccounts.get(payerAccountId);
+            Account payeeAccount = lockedAccounts.get(event.payeeAccountId());
+
+            if (payerAccount == null)
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conta de origem não encontrada");
+
+            if (payeeAccount == null)
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Conta de destino não encontrada");
             
             if (payerAccount.getBalance() < event.amount()) 
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Saldo insuficiente");
@@ -115,7 +136,7 @@ public class TransactionService {
             );
 
             transactionProducer.publishTransactionCompleted(completedEvent);
-        } catch (ObjectOptimisticLockingFailureException exception) {
+        } catch (ObjectOptimisticLockingFailureException | PessimisticLockingFailureException exception) {
             throw new ResponseStatusException(
                 HttpStatus.CONFLICT,
                 "A conta foi atualizada por outra transação. Tente novamente"

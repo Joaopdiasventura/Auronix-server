@@ -145,8 +145,7 @@ class TransactionServiceTest {
 
     @Test
     void transferMovesMoneyAndCreatesCompletedTransferLedgerEntry() {
-        when(accountRepository.findByUserId(PAYER_USER_ID)).thenReturn(Optional.of(payerAccount));
-        when(accountRepository.findById(PAYEE_ACCOUNT_ID)).thenReturn(Optional.of(payeeAccount));
+        mockLockedTransferAccounts(payerAccount, payeeAccount);
 
         transactionService.transfer(new CreateTransferEvent(PAYER_USER_ID, PAYEE_ACCOUNT_ID, 300L));
 
@@ -172,8 +171,7 @@ class TransactionServiceTest {
     @Test
     void transferEnqueuesTransactionCompletedWithFinancialState() {
         Instant createdAt = Instant.parse("2026-05-17T00:00:00Z");
-        when(accountRepository.findByUserId(PAYER_USER_ID)).thenReturn(Optional.of(payerAccount));
-        when(accountRepository.findById(PAYEE_ACCOUNT_ID)).thenReturn(Optional.of(payeeAccount));
+        mockLockedTransferAccounts(payerAccount, payeeAccount);
         when(transactionRepository.save(any(LedgerTransaction.class))).thenAnswer(invocation -> {
             LedgerTransaction transaction = invocation.getArgument(0);
             transaction.setId(TRANSACTION_ID);
@@ -197,7 +195,7 @@ class TransactionServiceTest {
 
     @Test
     void transferThrowsNotFoundWhenPayerAccountIsMissing() {
-        when(accountRepository.findByUserId(PAYER_USER_ID)).thenReturn(Optional.empty());
+        when(accountRepository.findIdByUserId(PAYER_USER_ID)).thenReturn(Optional.empty());
 
         assertStatus(
             () -> transactionService.transfer(new CreateTransferEvent(PAYER_USER_ID, PAYEE_ACCOUNT_ID, 300L)),
@@ -209,8 +207,8 @@ class TransactionServiceTest {
 
     @Test
     void transferThrowsNotFoundWhenPayeeAccountIsMissing() {
-        when(accountRepository.findByUserId(PAYER_USER_ID)).thenReturn(Optional.of(payerAccount));
-        when(accountRepository.findById(PAYEE_ACCOUNT_ID)).thenReturn(Optional.empty());
+        when(accountRepository.findIdByUserId(PAYER_USER_ID)).thenReturn(Optional.of(PAYER_ACCOUNT_ID));
+        when(accountRepository.findAllByIdInForUpdate(any())).thenReturn(List.of(payerAccount));
 
         assertStatus(
             () -> transactionService.transfer(new CreateTransferEvent(PAYER_USER_ID, PAYEE_ACCOUNT_ID, 300L)),
@@ -220,8 +218,7 @@ class TransactionServiceTest {
 
     @Test
     void transferThrowsBadRequestWhenAccountsAreTheSame() {
-        when(accountRepository.findByUserId(PAYER_USER_ID)).thenReturn(Optional.of(payerAccount));
-        when(accountRepository.findById(PAYER_ACCOUNT_ID)).thenReturn(Optional.of(payerAccount));
+        when(accountRepository.findIdByUserId(PAYER_USER_ID)).thenReturn(Optional.of(PAYER_ACCOUNT_ID));
 
         assertStatus(
             () -> transactionService.transfer(new CreateTransferEvent(PAYER_USER_ID, PAYER_ACCOUNT_ID, 300L)),
@@ -231,9 +228,6 @@ class TransactionServiceTest {
 
     @Test
     void transferThrowsBadRequestWhenAmountIsInvalid() {
-        when(accountRepository.findByUserId(PAYER_USER_ID)).thenReturn(Optional.of(payerAccount));
-        when(accountRepository.findById(PAYEE_ACCOUNT_ID)).thenReturn(Optional.of(payeeAccount));
-
         assertStatus(
             () -> transactionService.transfer(new CreateTransferEvent(PAYER_USER_ID, PAYEE_ACCOUNT_ID, 0L)),
             HttpStatus.BAD_REQUEST
@@ -242,8 +236,7 @@ class TransactionServiceTest {
 
     @Test
     void transferThrowsBadRequestWhenBalanceIsInsufficient() {
-        when(accountRepository.findByUserId(PAYER_USER_ID)).thenReturn(Optional.of(payerAccount));
-        when(accountRepository.findById(PAYEE_ACCOUNT_ID)).thenReturn(Optional.of(payeeAccount));
+        mockLockedTransferAccounts(payerAccount, payeeAccount);
 
         assertStatus(
             () -> transactionService.transfer(new CreateTransferEvent(PAYER_USER_ID, PAYEE_ACCOUNT_ID, 1001L)),
@@ -253,8 +246,7 @@ class TransactionServiceTest {
 
     @Test
     void transferThrowsConflictWhenOptimisticLockFails() {
-        when(accountRepository.findByUserId(PAYER_USER_ID)).thenReturn(Optional.of(payerAccount));
-        when(accountRepository.findById(PAYEE_ACCOUNT_ID)).thenReturn(Optional.of(payeeAccount));
+        mockLockedTransferAccounts(payerAccount, payeeAccount);
         when(transactionRepository.save(any(LedgerTransaction.class)))
             .thenThrow(new ObjectOptimisticLockingFailureException(Account.class, PAYER_ACCOUNT_ID));
 
@@ -289,6 +281,17 @@ class TransactionServiceTest {
         assertStatus(() -> transactionService.findByUserId(PAYER_USER_ID, PageRequest.of(0, 10)), HttpStatus.NOT_FOUND);
     }
 
+    @Test
+    void transferLocksAccountsInDeterministicOrder() {
+        ArgumentCaptor<List<UUID>> accountIdsCaptor = ArgumentCaptor.forClass(List.class);
+        when(accountRepository.findIdByUserId(PAYER_USER_ID)).thenReturn(Optional.of(PAYEE_ACCOUNT_ID));
+        when(accountRepository.findAllByIdInForUpdate(accountIdsCaptor.capture())).thenReturn(List.of(payerAccount, payeeAccount));
+
+        transactionService.transfer(new CreateTransferEvent(PAYER_USER_ID, PAYER_ACCOUNT_ID, 100L));
+
+        assertThat(accountIdsCaptor.getValue()).containsExactly(PAYER_ACCOUNT_ID, PAYEE_ACCOUNT_ID);
+    }
+
     private static void assertStatus(Runnable action, HttpStatus status) {
         assertThatThrownBy(action::run)
             .isInstanceOf(ResponseStatusException.class)
@@ -308,6 +311,11 @@ class TransactionServiceTest {
         account.setUser(user);
         account.setBalance(balance);
         return account;
+    }
+
+    private void mockLockedTransferAccounts(Account payerAccount, Account payeeAccount) {
+        when(accountRepository.findIdByUserId(PAYER_USER_ID)).thenReturn(Optional.of(payerAccount.getId()));
+        when(accountRepository.findAllByIdInForUpdate(any())).thenReturn(List.of(payerAccount, payeeAccount));
     }
 
     private LedgerTransaction ledgerTransaction() {
