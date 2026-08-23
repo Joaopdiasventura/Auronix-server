@@ -2,26 +2,20 @@ module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "~> 5.0"
 
-  name = local.name
-  cidr = var.vpc_cidr
+  name = local.vpc_config.name
+  cidr = local.vpc_config.cidr
 
-  azs             = local.azs
-  private_subnets = local.private_subnets
-  public_subnets  = local.public_subnets
+  azs             = local.vpc_config.azs
+  private_subnets = local.vpc_config.private_subnets
+  public_subnets  = local.vpc_config.public_subnets
 
-  enable_dns_hostnames = true
-  enable_dns_support   = true
+  enable_dns_hostnames = local.vpc_config.enable_dns_hostnames
+  enable_dns_support   = local.vpc_config.enable_dns_support
 
-  enable_nat_gateway = true
-  single_nat_gateway = var.single_nat_gateway
+  enable_nat_gateway = local.vpc_config.enable_nat_gateway
+  single_nat_gateway = local.vpc_config.single_nat_gateway
 
-  public_subnet_tags = {
-    "kubernetes.io/role/elb"              = "1"
-    "kubernetes.io/cluster/${local.name}" = "shared"
-  }
+  public_subnet_tags = local.vpc_config.public_subnet_tags
 
-  private_subnet_tags = {
-    "kubernetes.io/role/internal-elb"     = "1"
-    "kubernetes.io/cluster/${local.name}" = "shared"
-  }
+  private_subnet_tags = local.vpc_config.private_subnet_tags
 }

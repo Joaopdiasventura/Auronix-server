@@ -72,7 +72,7 @@ jobs:
         shell: pwsh
         run: ./scripts/validate-k8s-offline.ps1
 
-      - name: Validate Terraform offline
+      - name: Validate Terraform offline and tests
         shell: pwsh
         run: ./scripts/validate-terraform.ps1
 

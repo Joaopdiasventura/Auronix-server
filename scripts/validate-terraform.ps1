@@ -17,6 +17,10 @@ foreach ($stack in $stacks) {
     if ($LASTEXITCODE -ne 0) {
         throw "terraform validate failed for $stack"
     }
+    terraform "-chdir=$path" test
+    if ($LASTEXITCODE -ne 0) {
+        throw "terraform test failed for $stack"
+    }
 }
 
 $trivy = Get-Command trivy -ErrorAction SilentlyContinue
