@@ -4,7 +4,10 @@ resources:
   - ../../base
 patches:
   - path: configmap-production.yaml
-  - path: delete-postgres.yaml
-  - path: delete-rabbitmq.yaml
-  - path: delete-redis.yaml
+  - path: delete-postgres-statefulset.yaml
+  - path: delete-postgres-service.yaml
+  - path: delete-rabbitmq-deployment.yaml
+  - path: delete-rabbitmq-service.yaml
+  - path: delete-redis-deployment.yaml
+  - path: delete-redis-service.yaml
   - path: server-production.yaml
