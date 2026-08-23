@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 $stacks = @("cluster", "app")
 
 foreach ($stack in $stacks) {
-    $path = "infra\terraform\$stack"
+    $path = "infra/terraform/$stack"
     Write-Host "Validating Terraform stack $stack"
     terraform "-chdir=$path" fmt -check -recursive
     if ($LASTEXITCODE -ne 0) {

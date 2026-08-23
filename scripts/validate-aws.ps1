@@ -35,7 +35,7 @@ Write-Host "AWS arn: $($identity.Arn)"
 Write-Host "AWS region: $AwsRegion"
 Write-Host "EKS cluster: $ClusterName"
 
-$terraformPath = "infra\terraform\$TerraformStack"
+$terraformPath = "infra/terraform/$TerraformStack"
 Invoke-Native terraform @("-chdir=$terraformPath", "init")
 terraform "-chdir=$terraformPath" workspace show
 if ($LASTEXITCODE -ne 0) {

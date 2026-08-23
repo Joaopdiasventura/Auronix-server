@@ -34,6 +34,12 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           cache: maven
 
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
       - name: Make Maven wrapper executable
         run: chmod +x ./mvnw
 
@@ -58,6 +64,17 @@ jobs:
 
       - name: Build application
         run: ./mvnw -B package -DskipTests
+
+      - name: Build Docker image
+        run: docker build -t auronix-server:${{ github.sha }} .
+
+      - name: Validate Kubernetes manifests offline
+        shell: pwsh
+        run: ./scripts/validate-k8s-offline.ps1
+
+      - name: Validate Terraform offline
+        shell: pwsh
+        run: ./scripts/validate-terraform.ps1
 
   publish:
     name: Publish Docker image
