@@ -2,17 +2,21 @@ services:
   server:
     build:
       context: .
+    restart: unless-stopped
     environment:
       NODE_ENV: development
       SERVER_PORT: 8080
       DATABASE_URL: jdbc:postgresql://db:5432/auronix
       DATABASE_USERNAME: postgres
       DATABASE_PASSWORD: postgres
-      RABBITMQ_URL: amqp://user:user@message-br:5672/
+      RABBITMQ_URL: amqp://message-br:5672/
+      RABBITMQ_USERNAME: user
+      RABBITMQ_PASSWORD: user
       REDIS_URL: redis://cache:6379
       JPA_DDL_AUTO: update
       JPA_SHOW_SQL: true
       JPA_FORMAT_SQL: true
+      MANAGEMENT_HEALTH_PROBES_ENABLED: true
     ports:
       - 8080:8080
     depends_on:
@@ -22,6 +26,14 @@ services:
         condition: service_healthy
       cache:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/127.0.0.1/8080'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    networks:
+      - auronix-local
 
   db:
     image: postgres:17-alpine
@@ -35,16 +47,21 @@ services:
     ports:
       - 5432:5432
     healthcheck:
-      test: ["CMD", "pg_isready"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d auronix"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - auronix-local
 
   message-br:
     image: rabbitmq:4-management
+    restart: always
     environment:
       RABBITMQ_DEFAULT_USER: user
       RABBITMQ_DEFAULT_PASS: user
+    volumes:
+      - auronix-rabbitmq:/var/lib/rabbitmq
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -58,10 +75,15 @@ services:
       timeout: 5s
       retries: 15
       start_period: 20s
+    networks:
+      - auronix-local
 
   cache:
     image: redis:8-alpine
     restart: always
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - auronix-redis:/data
     ports:
       - "6379:6379"
     healthcheck:
@@ -69,6 +91,13 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - auronix-local
 
 volumes:
   auronix-data:
+  auronix-rabbitmq:
+  auronix-redis:
+
+networks:
+  auronix-local:
