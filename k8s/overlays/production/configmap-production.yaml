@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auronix-config
+  namespace: auronix
+data:
+  DATABASE_URL: "jdbc:postgresql://REPLACE_WITH_RDS_ENDPOINT:5432/auronix"
+  RABBITMQ_URL: "amqp://REPLACE_WITH_RABBITMQ_ENDPOINT:5672/"
+  REDIS_URL: "redis://REPLACE_WITH_REDIS_ENDPOINT:6379"
+  JPA_DDL_AUTO: "validate"
+  JPA_SHOW_SQL: "false"
+  JPA_FORMAT_SQL: "false"

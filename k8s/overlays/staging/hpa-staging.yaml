@@ -1,0 +1,8 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: server
+  namespace: auronix
+spec:
+  minReplicas: 1
+  maxReplicas: 3

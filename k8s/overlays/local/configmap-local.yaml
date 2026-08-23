@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auronix-config
+  namespace: auronix
+data:
+  JPA_DDL_AUTO: "update"
+  JPA_SHOW_SQL: "true"
+  JPA_FORMAT_SQL: "true"

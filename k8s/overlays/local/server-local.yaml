@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server
+  namespace: auronix
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: server
+          image: server-server:latest
+          imagePullPolicy: Never

@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq
+  namespace: auronix
+$patch: delete
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  namespace: auronix
+$patch: delete
