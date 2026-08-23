@@ -1,180 +1,204 @@
 # Operacao
 
-## Execucao Local
+## Visao de Ambientes
 
-O Auronix pode ser executado localmente de duas formas: como stack completa via Docker Compose ou como processo Spring Boot standalone conectado a dependencias locais.
+```text
+LOCAL DEVELOPMENT
 
-### Opcao de Desenvolvimento Local 1: Docker Compose
+Auronix
+|-- Spring Boot
+|-- PostgreSQL via Docker Compose
+|-- RabbitMQ via Docker Compose
+`-- Redis via Docker Compose
+```
 
-Fluxo recomendado para validar o ambiente local completo, incluindo o container da API e todas as dependencias de runtime.
+```text
+LOCAL KUBERNETES VALIDATION
+
+kind
+`-- manifests Kubernetes validados em cluster descartavel
+```
+
+```text
+PRODUCTION
+
+AWS
+|-- Terraform
+|-- VPC
+|-- EKS
+|-- workloads Kubernetes
+|-- PostgreSQL externo ao ciclo de vida dos Pods
+|-- RabbitMQ externo ou servico gerenciado a definir
+`-- Redis externo ou servico gerenciado a definir
+```
+
+As dependencias de infraestrutura para desenvolvimento local rodam via Docker Compose. Kubernetes local existe apenas para validacao operacional de manifests, probes, rollout, rollback e shutdown; ele nao substitui Docker Compose no fluxo normal de desenvolvimento.
+
+## Ambiente Local
 
 Pre-requisitos:
 
-- Docker com suporte a Docker Compose.
-- Acesso de rede para baixar imagens base e dependencias Maven durante o build da imagem.
+- Docker Desktop ou Docker Engine com Docker Compose.
+- JDK 26.
+- Maven Wrapper do projeto.
 
-Arquivos Compose identificados no projeto:
+Subir o ambiente completo:
 
-| Arquivo | Finalidade |
-| --- | --- |
-| `compose.yaml` | Constroi a imagem do backend e inicia PostgreSQL, RabbitMQ e o servico `cache`, baseado em Redis, para desenvolvimento local. |
-
-Subir o ambiente:
-
-```bash
-docker compose up --build
+```powershell
+docker compose config
+docker compose up -d --build
+docker compose ps
 ```
 
-Executar em background:
+Executar validacao local completa com Compose:
 
-```bash
-docker compose up --build -d
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-local.ps1
+```
+
+Executar smoke tests depois que o Compose estiver de pe:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\smoke-local.ps1
 ```
 
 Parar o ambiente:
 
-```bash
+```powershell
 docker compose down
 ```
 
-Servicos iniciados pelo Compose:
+Limpar volumes locais:
 
-| Servico | Imagem ou origem | Portas expostas | Papel |
-| --- | --- | --- | --- |
-| `server` | Construido pelo `Dockerfile` local | `8080:8080` | API Spring Boot |
-| `db` | `postgres:17-alpine` | `5432:5432` | Banco PostgreSQL |
-| `message-br` | `rabbitmq:4-management` | `5672:5672`, `15672:15672` | Broker RabbitMQ e UI de gestao |
-| `cache` | `redis:8-alpine` | `6379:6379` | Instancia Redis para metadados SSE |
-
-O arquivo Compose fornece o ambiente necessario para o container da aplicacao, incluindo URL do banco, credenciais de banco, URL do RabbitMQ, URL do Redis e flags JPA. Na rede do Compose, a API usa `REDIS_URL=redis://cache:6379` para acessar o servico de cache baseado em Redis. Os valores sensiveis nesse arquivo local sao orientados a desenvolvimento; use gestao de segredos especifica do ambiente para ambientes compartilhados ou similares a producao.
-
-Validar a API:
-
-```bash
-curl http://localhost:8080/actuator/health
+```powershell
+docker compose down -v
 ```
+
+Servicos locais:
+
+| Servico | Porta | Validacao |
+| --- | --- | --- |
+| `server` | `8080` | `/actuator/health`, `/actuator/health/liveness`, `/actuator/health/readiness` |
+| `db` | `5432` | `pg_isready` dentro do container |
+| `message-br` | `5672`, `15672` | `rabbitmq-diagnostics ping` e porta AMQP |
+| `cache` | `6379` | `redis-cli ping` |
 
 Logs uteis:
 
-```bash
+```powershell
 docker compose logs -f server
 docker compose logs -f db
 docker compose logs -f message-br
 docker compose logs -f cache
 ```
 
-Observacao operacional: `db`, `message-br` e `cache` incluem health checks. Mantenha nomes de servicos Compose e URLs da aplicacao alinhados ao ajustar nomes de dependencias locais.
+## Testes e Build
 
-### Opcao de Desenvolvimento Local 2: Spring Boot Standalone
-
-Fluxo recomendado para iterar na aplicacao Java mantendo as dependencias em containers locais ou outro runtime local.
-
-Pre-requisitos:
-
-- JDK 26.
-- Maven Wrapper do projeto: `mvnw` ou `mvnw.cmd`.
-- PostgreSQL, RabbitMQ e Redis em execucao antes da aplicacao iniciar.
-
-Subir apenas as dependencias externas com o arquivo Compose existente:
-
-```bash
-docker compose up -d db message-br cache
-```
-
-A configuracao default da aplicacao espera endpoints locais compativeis com esses servicos do Compose:
-
-| Variavel | Comportamento local default |
-| --- | --- |
-| `PORT` | Executa a API em `8080` quando nao sobrescrita |
-| `DATABASE_URL` | PostgreSQL em localhost na porta `5432` |
-| `DATABASE_USERNAME` | Usuario de banco de desenvolvimento das configuracoes locais |
-| `DATABASE_PASSWORD` | Senha de banco de desenvolvimento das configuracoes locais |
-| `RABBITMQ_URL` | RabbitMQ em localhost na porta `5672` |
-| `REDIS_URL` | Redis em localhost na porta `6379` para execucao standalone, ou `redis://cache:6379` dentro da rede do Compose |
-| `JWT_SECRET` | Segredo de assinatura JWT; defina um valor especifico do ambiente fora de uso apenas local |
-| `CLIENT_URLS` | Origens CORS, com default para a origem frontend local configurada na aplicacao |
-
-Executar a aplicacao:
-
-```bash
-./mvnw spring-boot:run
-```
-
-No Windows:
-
-```powershell
-.\mvnw.cmd spring-boot:run
-```
-
-Executar testes:
-
-```bash
-./mvnw test
-```
-
-No Windows:
+Testes Maven:
 
 ```powershell
 .\mvnw.cmd test
 ```
 
-Validar a API:
+Package:
 
-```bash
-curl http://localhost:8080/actuator/health
+```powershell
+.\mvnw.cmd package -DskipTests
 ```
 
-Observacao importante: com Spring Boot standalone, o processo Java roda diretamente no host enquanto PostgreSQL, RabbitMQ e Redis podem rodar separadamente. Com Docker Compose, a API e as dependencias rodam juntas como containers usando os nomes de rede definidos em `compose.yaml`, incluindo `cache` para Redis.
+Testcontainers obrigatorio quando Docker estiver disponivel:
 
-## Build e Testes
-
-```bash
-./mvnw test
-./mvnw package
-docker build -t auronix-server .
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-testcontainers.ps1
 ```
 
-## Deploy Kubernetes
+Build Docker:
 
-Os manifests podem ser aplicados diretamente quando um contexto de cluster estiver configurado:
-
-```bash
-kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/
+```powershell
+docker build -t auronix-server:local .
 ```
 
-O service da API e `auronix-server` no namespace `auronix`.
+Fluxo local/offline central:
 
-```bash
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-all.ps1
+```
+
+Para pular a subida completa do Compose quando ele ja foi validado:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-all.ps1 -SkipCompose
+```
+
+Para incluir validacao Kubernetes real em kind:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-all.ps1 -IncludeKind
+```
+
+## Kubernetes
+
+Validacao offline, sem AWS e sem EKS:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-k8s-offline.ps1
+```
+
+Validacao real em cluster local kind:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-k8s-kind.ps1
+```
+
+O script de kind constroi a imagem local, carrega no cluster, aplica `k8s/overlays/local`, aguarda rollouts, valida health/readiness/liveness por port-forward, testa `kubectl rollout restart`, `kubectl rollout history`, `kubectl rollout undo` e remove um Pod para exercitar recuperacao.
+
+## Terraform
+
+Validacao offline:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-terraform.ps1
+```
+
+Validacao AWS segura:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-aws.ps1
+```
+
+O fluxo AWS inicia por `aws sts get-caller-identity`. Se a identidade nao puder ser validada, nenhum comando de EKS, Kubernetes conectado ou Terraform plan e executado.
+
+## Rollout e Rollback
+
+Com contexto Kubernetes correto:
+
+```powershell
+kubectl rollout status deployment/server -n auronix
+kubectl rollout history deployment/server -n auronix
+kubectl rollout undo deployment/server -n auronix
 kubectl get pods -n auronix
-kubectl get svc -n auronix
+kubectl describe deployment server -n auronix
 kubectl logs -n auronix deployment/server
 ```
 
-## Deploy Terraform
+Producao deve usar imagem imutavel por digest ou SHA publicado pela pipeline. A relacao operacional esperada e:
 
-Provisione primeiro a infraestrutura do cluster e depois a stack da aplicacao. Revise cada plan antes de aplicar.
-
-```bash
-cd infra/terraform/cluster
-terraform init
-terraform plan
-terraform apply
+```text
+commit Git
+|
+imagem Docker por SHA/digest
+|
+Deployment Kubernetes
+|
+revision Kubernetes
 ```
 
-Use o comando de output do cluster para configurar o kubeconfig, depois:
+## Checklist Operacional
 
-```bash
-cd infra/terraform/app
-terraform init
-terraform plan
-terraform apply
-```
-
-## Verificacoes de Troubleshooting
-
-- `/actuator/health` deve retornar informacoes de saude quando a API estiver acessivel.
-- Verifique readiness e liveness probes Kubernetes para `server`, `postgres`, `rabbitmq` e `redis`.
-- Confirme se URLs de RabbitMQ e Redis correspondem ao ambiente de runtime.
-- Confirme se as origens CORS configuradas incluem a origem da aplicacao cliente.
-- Para processamento de transferencias, inspecione filas RabbitMQ e logs da aplicacao para atividade dos consumers.
+- `docker compose ps` mostra os quatro servicos healthy no ambiente local.
+- `/actuator/health/liveness` responde sem depender de banco, RabbitMQ ou Redis.
+- `/actuator/health/readiness` so aceita trafego quando a aplicacao esta pronta.
+- `kubectl rollout status` conclui antes de promover mudancas.
+- `kubectl get pods -n auronix` nao e suficiente sozinho; verifique logs, restart count, readiness, liveness e eventos.
+- `terraform plan` deve ser revisado antes de qualquer apply manual.
+- `terraform apply` e `terraform destroy` nao fazem parte das validacoes locais automatizadas.

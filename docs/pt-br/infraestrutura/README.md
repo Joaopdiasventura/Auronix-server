@@ -1,40 +1,48 @@
 # Infraestrutura
 
-## Infraestrutura Local
+## Local
 
-`compose.yaml` define um runtime local com quatro servicos:
+`compose.yaml` e a fonte de verdade para infraestrutura de desenvolvimento local. Ele inicia:
 
-- `server`: constroi a imagem do projeto atual e expoe a porta `8080`.
-- `db`: PostgreSQL 17 Alpine, banco `auronix`, exposto na porta `5432`, com volume nomeado.
-- `message-br`: imagem RabbitMQ 4 management, AMQP em `5672`, interface de gestao em `15672`.
-- `cache`: Redis 8 Alpine exposto em `6379`.
+- `server`: imagem construida a partir do `Dockerfile`, porta `8080`.
+- `db`: PostgreSQL 17 Alpine, banco `auronix`, porta `5432`, volume persistente nomeado.
+- `message-br`: RabbitMQ 4 management, portas `5672` e `15672`, volume persistente nomeado.
+- `cache`: Redis 8 Alpine, porta `6379`, AOF habilitado e volume persistente nomeado.
 
-As verificacoes de saude estao configuradas para PostgreSQL, RabbitMQ e para o servico `cache`, baseado em Redis. Na rede do Compose, o servidor e configurado com `REDIS_URL=redis://cache:6379`.
+O Compose tambem define rede dedicada, restart policy e health checks para os servicos criticos. `depends_on` usa condicoes de saude para evitar tratar container apenas `running` como dependencia pronta.
 
-## Imagem de Container
+## Imagem
 
-O `Dockerfile` usa build multi-stage:
+O `Dockerfile` usa build multi-stage com Temurin 26:
 
-- Estagio de dependencias baseado em `eclipse-temurin:26-jdk-jammy`.
-- Estagio de package executando Maven package com testes ignorados.
-- Estagio de extracao de camadas com Spring Boot layertools.
-- Estagio de runtime baseado em `eclipse-temurin:26-jre-jammy`.
+- etapa de dependencias Maven;
+- etapa de package;
+- extracao por Spring Boot layertools;
+- runtime JRE com usuario nao-root `appuser`.
 
-A imagem final cria e executa com usuario nao-root `appuser`, expoe a porta `8080` e inicia o jar Spring Boot por `JarLauncher`.
+A imagem expoe a porta `8080` e inicia a aplicacao via `JarLauncher`.
 
-## Infraestrutura de Cluster
+## Producao
 
-O Terraform provisiona infraestrutura AWS em `infra/terraform/cluster`:
+Producao nao e representada pelo Docker Compose. O fluxo esperado e:
 
-- Provider AWS na regiao configurada.
-- VPC por `terraform-aws-modules/vpc/aws`.
-- EKS por `terraform-aws-modules/eks/aws`.
-- Subnets privadas e publicas derivadas do CIDR da VPC e da quantidade de zonas de disponibilidade.
-- NAT Gateway habilitado, com `single_nat_gateway` configuravel.
-- Node group gerenciado do EKS com tipos de instancia e quantidades de nos configuraveis.
+```text
+AWS
+|
+Terraform
+|
+EKS
+|
+Kubernetes
+```
 
-## Infraestrutura da Aplicacao
+A stack `infra/terraform/cluster` provisiona VPC e EKS. A stack `infra/terraform/app` aplica os manifests de workloads da aplicacao no cluster Kubernetes existente.
 
-Os recursos de runtime da aplicacao sao definidos em `k8s` e aplicados diretamente ou por `infra/terraform/app`. Eles incluem API, PostgreSQL, RabbitMQ, Redis, metrics-server, HPA, ConfigMap e formato de Secret.
+PostgreSQL, RabbitMQ e Redis de producao nao sao criados pelo ciclo de vida dos Pods da aplicacao. Os manifests de producao recebem endpoints externos por ConfigMap/Secret. Se RDS/Aurora, Amazon MQ ou ElastiCache forem adotados, isso deve entrar em Terraform explicitamente em uma etapa propria.
 
-Observacao importante: o PostgreSQL no Kubernetes usa `emptyDir`. Isso e aceitavel para estudo, validacao ou ambientes descartaveis. Para ambientes similares a producao, recomenda-se volume persistente e migrations controladas, como Flyway ou Liquibase.
+## Limites Atuais
+
+- Terraform ainda nao provisiona RDS/Aurora.
+- Terraform ainda nao provisiona RabbitMQ gerenciado.
+- Terraform ainda nao provisiona Redis gerenciado.
+- Os manifests locais de Postgres, RabbitMQ e Redis existem para validacao Kubernetes local, nao como arquitetura produtiva.

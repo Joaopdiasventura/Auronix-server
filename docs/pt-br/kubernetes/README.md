@@ -1,43 +1,100 @@
 # Kubernetes
 
-## Conjunto de Recursos
+## Estrutura
 
-A pasta `k8s` contem manifests para o namespace `auronix` e servicos de runtime:
-
-- `namespace.yaml`: cria o namespace `auronix`.
-- `configmap.yaml`: configuracoes de runtime, como `PORT`, URL do banco, URL do RabbitMQ, URL do Redis e opcoes JPA.
-- `secrets.yaml`: chaves esperadas para credenciais de banco, credenciais RabbitMQ e assinatura JWT.
-- `server.yaml`: deployment da API e service `LoadBalancer`.
-- `postgres.yaml`: deployment PostgreSQL e service interno.
-- `rabbitmq.yaml`: deployment RabbitMQ e service interno.
-- `redis.yaml`: deployment Redis e service interno.
-- `metrics-server.yaml`: deployment metrics-server e recursos RBAC em `kube-system`.
-- `hpa.yaml`: HorizontalPodAutoscaler para o deployment da API.
-
-## Topologia de Runtime
-
-```mermaid
-flowchart TD
-    LB[LoadBalancer Service auronix-server:80] --> Server[Deployment server:8080]
-    Server --> Postgres[Service postgres:5432]
-    Server --> Rabbit[Service rabbitmq:5672]
-    Server --> Redis[Service redis:6379]
-    HPA[HPA CPU 70 por cento] --> Server
-    Metrics[metrics-server] --> HPA
+```text
+k8s/
+|-- base/
+`-- overlays/
+    |-- local/
+    |-- staging/
+    `-- production/
 ```
 
-## Deployment da API
+Os manifests planos em `k8s/*.yaml` continuam presentes para compatibilidade com a stack Terraform da aplicacao. A estrutura Kustomize e usada para renderizar e validar ambientes sem depender de AWS.
 
-O deployment `server` usa a imagem `jpplay/auronix-server:latest`, `imagePullPolicy: Always` e porta de container `8080`. Ele recebe configuracoes de `auronix-config` e valores sensiveis de `auronix-secrets`. Readiness e liveness probes apontam para `/actuator/health`.
+## Ambientes
 
-As requests de recursos sao `250m` de CPU e `512Mi` de memoria. Os limits sao `750m` de CPU e `1Gi` de memoria. O service `auronix-server` e do tipo `LoadBalancer`, mapeando a porta `80` para a porta `http` do container.
+`local` serve apenas para validacao Kubernetes. Ele usa `server-server:latest` com `imagePullPolicy: Never` e inclui Postgres, RabbitMQ e Redis dentro do cluster descartavel.
 
-## Dependencias
+`staging` preserva a topologia de base com limites menores de replicas.
 
-PostgreSQL, RabbitMQ e Redis rodam como deployments de uma replica com services internos ClusterIP. PostgreSQL e RabbitMQ usam readiness e liveness probes baseados em comandos diagnosticos nativos. Redis usa `redis-cli ping`.
+`production` remove Postgres, RabbitMQ e Redis in-cluster e aponta a aplicacao para endpoints externos. A imagem de producao nao deve usar `latest`; use tag por SHA ou digest imutavel.
 
-Observacao importante: o manifest do Postgres armazena dados em `emptyDir`. Para ambientes produtivos, recomenda-se volume persistente e estrategia de backup/migration.
+## Probes
 
-## Autoscaling e Metricas
+O deployment da API usa:
 
-O HPA aponta para o deployment `server`, com uma a tres replicas e alvo de 70 por cento de utilizacao de CPU. O manifest metrics-server incluido fornece a API de metricas exigida pelo HPA.
+- `startupProbe` em `/actuator/health/liveness`.
+- `livenessProbe` em `/actuator/health/liveness`.
+- `readinessProbe` em `/actuator/health/readiness`.
+
+Liveness deve indicar se o processo esta vivo. Readiness deve impedir trafego antes de a instancia aceitar requisicoes. Startup probe protege inicializacoes mais lentas para nao acionar liveness cedo demais.
+
+## Validacao Offline
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-k8s-offline.ps1
+```
+
+O script renderiza `local`, `staging` e `production` com `kubectl kustomize` em `target/k8s` e valida os YAMLs com `kubeconform`. Ele nao usa `aws eks update-kubeconfig`, nao acessa EKS e nao exige credenciais AWS.
+
+## Validacao Local Real
+
+Ferramenta escolhida: kind.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-k8s-kind.ps1
+```
+
+Fluxo:
+
+```text
+docker build
+|
+kind create cluster
+|
+kind load docker-image
+|
+kubectl apply -k k8s/overlays/local
+|
+rollout status
+|
+port-forward
+|
+health/readiness/liveness
+|
+rollout restart
+|
+rollout history
+|
+rollout undo
+|
+delete pod
+|
+rollout status
+```
+
+Use `-Destroy` para destruir o cluster ao final.
+
+## Validacao EKS
+
+Com credenciais validas:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-aws.ps1
+```
+
+O script valida account, ARN, regiao, cluster e workspace antes de comandos conectados. Depois executa `terraform plan`, `aws eks describe-cluster`, `aws eks update-kubeconfig`, `kubectl cluster-info`, `kubectl get nodes`, `kubectl get namespaces`, `kubectl apply --dry-run=server` e `kubectl diff`.
+
+`kubectl diff` retornar diferencas nao e falha por si so. Falha e erro de acesso, schema, admission ou comando.
+
+## Rollback
+
+```powershell
+kubectl rollout history deployment/server -n auronix
+kubectl rollout undo deployment/server -n auronix
+kubectl rollout status deployment/server -n auronix
+```
+
+Rollback depende de imagem anterior ainda disponivel no registry. Por isso producao deve usar tag por SHA ou digest.

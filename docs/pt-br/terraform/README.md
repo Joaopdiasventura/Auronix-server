@@ -2,51 +2,85 @@
 
 ## Organizacao
 
-O Terraform esta dividido em duas stacks:
+- `infra/terraform/cluster`: VPC e EKS na AWS.
+- `infra/terraform/app`: manifests Kubernetes da aplicacao em um cluster existente.
 
-- `infra/terraform/cluster`: provisiona rede AWS e EKS.
-- `infra/terraform/app`: aplica manifests Kubernetes em um contexto Kubernetes existente.
+## Validacao Offline
 
-## Stack de Cluster
+Nao exige AWS:
 
-A stack de cluster requer Terraform `>= 1.6.0` e provider AWS `~> 5.0`. Ela usa:
-
-- `terraform-aws-modules/vpc/aws` `~> 5.0`
-- `terraform-aws-modules/eks/aws` `~> 20.0`
-
-As principais variaveis incluem regiao AWS, ambiente, nome do cluster, versao Kubernetes, CIDR de services, CIDR da VPC, quantidade de zonas de disponibilidade, modo de NAT Gateway, tipos de instancia e tamanhos do node group.
-
-Os outputs incluem nome do cluster, regiao, endpoint e comando para atualizar o kubeconfig do cluster EKS criado.
-
-## Stack de Aplicacao
-
-A stack de aplicacao requer Terraform `>= 1.6.0` e provider Kubernetes `~> 2.33`. Ela le os arquivos YAML de `k8s`, separa manifests multi-documento, decodifica YAML, converte `Secret.stringData` para `data` em base64, aplica primeiro o namespace e depois aplica os demais recursos.
-
-```mermaid
-flowchart TD
-    Cluster[terraform cluster stack] --> VPC[AWS VPC]
-    Cluster --> EKS[AWS EKS]
-    EKS --> Kubeconfig[contexto kubeconfig]
-    Kubeconfig --> App[terraform app stack]
-    App --> YAML[manifests YAML em k8s]
-    App --> Namespace[Namespace auronix]
-    App --> Resources[Deployments Services ConfigMap Secret HPA]
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-terraform.ps1
 ```
 
-## Comandos Comuns
+O script executa para `cluster` e `app`:
 
-```bash
-cd infra/terraform/cluster
+```text
+terraform fmt -check -recursive
+terraform init -backend=false
+terraform validate
+trivy config
+```
+
+Esse fluxo valida sintaxe, providers, modulos e misconfigurations sem acessar state remoto e sem executar `apply`.
+
+## Validacao AWS
+
+Exige credenciais validas:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-aws.ps1
+```
+
+Sequencia:
+
+```text
+aws sts get-caller-identity
+|
+mostrar account, ARN, regiao e cluster
+|
 terraform init
+|
+terraform workspace show
+|
 terraform plan
-terraform apply
+|
+aws eks describe-cluster
+|
+aws eks update-kubeconfig
+|
+kubectl cluster-info
+|
+kubectl get nodes
+|
+kubectl get namespaces
+|
+kubectl apply --dry-run=server
+|
+kubectl diff
 ```
 
-```bash
-cd infra/terraform/app
-terraform init
-terraform plan
-terraform apply
-```
+Se `aws sts get-caller-identity` falhar, o script para imediatamente. Isso evita diagnosticar credencial expirada como erro de Kubernetes.
 
-Consideracao operacional: revise `terraform plan` antes de executar `terraform apply`. Comandos destrutivos como `terraform destroy` devem ser usados apenas quando a remocao do ambiente for intencional.
+## Apply
+
+`terraform apply` nao faz parte das validacoes automaticas locais. Use apply somente manualmente, apos revisar account, regiao, backend, workspace, plan e impacto esperado.
+
+`terraform destroy` tambem nao faz parte dos scripts de validacao.
+
+## Providers
+
+As stacks usam constraints versionadas:
+
+- Terraform `>= 1.6.0`.
+- AWS provider `~> 5.0`.
+- Kubernetes provider `~> 2.33`.
+- Modulos VPC e EKS com major version fixado por constraint.
+
+Nao use provider `latest` em infraestrutura critica.
+
+## Producao
+
+A stack `cluster` provisiona rede e EKS. A stack `app` aplica namespace, secrets, configmap, metrics-server, deployment/service da API e HPA.
+
+PostgreSQL, RabbitMQ e Redis de producao sao dependencias externas configuradas por endpoint. O Terraform atual nao provisiona RDS/Aurora, Amazon MQ ou ElastiCache.

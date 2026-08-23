@@ -27,12 +27,15 @@ flowchart TD
     MQ --> API
     API --> SSE[Stream Server-Sent Events]
     SSE --> Client
+    Local[Docker Compose local] --> DB
+    Local --> MQ
+    Local --> Cache
     Terraform[Terraform] --> EKS[Cluster AWS EKS]
     EKS --> K8s[Manifests Kubernetes]
     K8s --> API
-    K8s --> DB
-    K8s --> MQ
-    K8s --> Cache
+    API -. producao .-> ExternalDB[(PostgreSQL externo)]
+    API -. producao .-> ExternalMQ[(RabbitMQ externo)]
+    API -. producao .-> ExternalCache[(Redis externo)]
 ```
 
 ## Documentacao
