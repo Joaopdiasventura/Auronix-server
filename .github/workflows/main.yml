@@ -10,7 +10,7 @@ permissions:
   packages: write
 
 env:
-  IMAGE_NAME: jpplay/auditex-server
+  IMAGE_NAME: jpplay/auronix-server
   JAVA_VERSION: "26"
 
 concurrency:

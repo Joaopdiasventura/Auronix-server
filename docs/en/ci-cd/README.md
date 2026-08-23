@@ -26,7 +26,7 @@ The `publish` job depends on `validate` and:
 - Checks out the repository.
 - Sets up Docker Buildx.
 - Logs in to Docker Hub using repository secrets for username and password.
-- Generates Docker metadata for image `jpplay/auditex-server`.
+- Generates Docker metadata for image `jpplay/auronix-server`.
 - Publishes a long SHA tag on pushes.
 - Publishes `latest` only when the branch name is `main`.
 - Exposes the image digest as a job output.

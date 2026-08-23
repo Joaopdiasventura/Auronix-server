@@ -28,7 +28,7 @@ flowchart TD
 
 ## Deployment da API
 
-O deployment `server` usa a imagem `jpplay/auditex-server:latest`, `imagePullPolicy: Always` e porta de container `8080`. Ele recebe configuracoes de `auronix-config` e valores sensiveis de `auronix-secrets`. Readiness e liveness probes apontam para `/actuator/health`.
+O deployment `server` usa a imagem `jpplay/auronix-server:latest`, `imagePullPolicy: Always` e porta de container `8080`. Ele recebe configuracoes de `auronix-config` e valores sensiveis de `auronix-secrets`. Readiness e liveness probes apontam para `/actuator/health`.
 
 As requests de recursos sao `250m` de CPU e `512Mi` de memoria. Os limits sao `750m` de CPU e `1Gi` de memoria. O service `auronix-server` e do tipo `LoadBalancer`, mapeando a porta `80` para a porta `http` do container.
 
