@@ -1,180 +1,138 @@
 # Operations
 
-## Local Execution
+## Environment Model
 
-Auronix can be executed locally in two ways: as a full Docker Compose stack or as a standalone Spring Boot process connected to local dependencies.
+```text
+Local development:
+Docker Compose -> server, db, message-br, cache
 
-### Local Development Option 1: Docker Compose
+Local Kubernetes validation:
+Kind -> Kustomize local overlay with in-cluster dependencies
 
-Recommended workflow when validating the full local environment, including the API container and all runtime dependencies.
+Production Kubernetes manifests:
+Auronix workloads -> external PostgreSQL, RabbitMQ, Redis endpoints
 
-Prerequisites:
-
-- Docker with Docker Compose support.
-- Network access to download base images and Maven dependencies during the image build.
-
-Compose files identified in the project:
-
-| File | Purpose |
-| --- | --- |
-| `compose.yaml` | Builds the backend image and starts PostgreSQL, RabbitMQ, and the Redis-backed `cache` service for local development. |
-
-Start the environment:
-
-```bash
-docker compose up --build
+Current GitHub Actions main deployment:
+self-hosted Docker runner -> one auronix-server container by published digest
 ```
 
-Run it in the background:
+Docker Compose is the normal local runtime. Kind is a validation layer for Kubernetes behavior. Production Kubernetes manifests are prepared for EKS-style use with external dependencies, but the current workflow does not deploy them to EKS.
 
-```bash
-docker compose up --build -d
+## Local Compose
+
+Start the full local topology:
+
+```powershell
+docker compose up -d --build
 ```
 
-Stop the environment:
+Run the local validation script:
 
-```bash
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-local.ps1
+```
+
+`validate-local.ps1` checks Docker and Compose, validates Compose config, starts containers, waits for `db`, `message-br`, `cache`, and `server` health, runs `smoke-local.ps1`, then runs Maven tests and Maven package.
+
+`smoke-local.ps1` verifies:
+
+- `http://localhost:8080/actuator/health`
+- `http://localhost:8080/actuator/health/liveness`
+- `http://localhost:8080/actuator/health/readiness`
+- PostgreSQL with `pg_isready`
+- RabbitMQ with `rabbitmq-diagnostics ping` and `check_port_connectivity`
+- Redis with `redis-cli ping`
+
+Stop the local stack:
+
+```powershell
 docker compose down
 ```
 
-Services started by Compose:
+Use `docker compose down -v` only when you intentionally want to remove local named volumes.
 
-| Service | Image or source | Exposed ports | Role |
-| --- | --- | --- | --- |
-| `server` | Built from the local `Dockerfile` | `8080:8080` | Spring Boot API |
-| `db` | `postgres:17-alpine` | `5432:5432` | PostgreSQL database |
-| `message-br` | `rabbitmq:4-management` | `5672:5672`, `15672:15672` | RabbitMQ broker and management UI |
-| `cache` | `redis:8-alpine` | `6379:6379` | Redis instance for SSE metadata |
-
-The Compose file provides the application environment needed by the container, including database URL, database credentials, RabbitMQ URL, Redis URL, and JPA flags. In the Compose network, the API uses `REDIS_URL=redis://cache:6379` to reach the Redis-backed cache service. Sensitive values are development-oriented in this local file; use environment-specific secret management for shared or production-like environments.
-
-Validate the API:
-
-```bash
-curl http://localhost:8080/actuator/health
-```
-
-Useful logs:
-
-```bash
-docker compose logs -f server
-docker compose logs -f db
-docker compose logs -f message-br
-docker compose logs -f cache
-```
-
-Operational note: `db`, `message-br`, and `cache` include health checks. Keep Compose service names and application URLs aligned when adjusting local dependency names.
-
-### Local Development Option 2: Standalone Spring Boot
-
-Recommended workflow when iterating on the Java application while keeping dependencies in local containers or another local runtime.
-
-Prerequisites:
-
-- JDK 26.
-- The project Maven Wrapper: `mvnw` or `mvnw.cmd`.
-- PostgreSQL, RabbitMQ, and Redis running before the application starts.
-
-Start only the external dependencies with the existing Compose file:
-
-```bash
-docker compose up -d db message-br cache
-```
-
-The default application configuration expects local dependency endpoints compatible with these Compose services:
-
-| Variable | Default local behavior |
-| --- | --- |
-| `PORT` | Runs the API on `8080` when not overridden |
-| `DATABASE_URL` | PostgreSQL on localhost port `5432` |
-| `DATABASE_USERNAME` | Development database user from local settings |
-| `DATABASE_PASSWORD` | Development database password from local settings |
-| `RABBITMQ_URL` | RabbitMQ on localhost port `5672` |
-| `REDIS_URL` | Redis on localhost port `6379` for standalone execution, or `redis://cache:6379` inside the Compose network |
-| `JWT_SECRET` | JWT signing secret; set an environment-specific value outside local-only use |
-| `CLIENT_URLS` | CORS origins, defaulting to the local frontend origin configured in the application |
-
-Run the application:
-
-```bash
-./mvnw spring-boot:run
-```
-
-On Windows:
-
-```powershell
-.\mvnw.cmd spring-boot:run
-```
-
-Run tests:
-
-```bash
-./mvnw test
-```
-
-On Windows:
+## Build and Test Commands
 
 ```powershell
 .\mvnw.cmd test
+.\mvnw.cmd package -DskipTests
+docker build -t auronix-server:local .
 ```
 
-Validate the API:
+On Unix-like shells, use `./mvnw` instead of `.\mvnw.cmd`.
 
-```bash
-curl http://localhost:8080/actuator/health
+## Testcontainers Validation
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-testcontainers.ps1
 ```
 
-Important note: with standalone Spring Boot, the Java process runs directly on the host while PostgreSQL, RabbitMQ, and Redis can run separately. With Docker Compose, the API and dependencies run together as containers using the network names defined in `compose.yaml`, including `cache` for Redis.
+The script requires Docker, runs only `FinancePostgresIntegrationTest`, verifies that the Surefire XML report exists, and fails if the test count is zero or if any `skipped`, `failures`, or `errors` value is non-zero.
 
-## Build and Test
+## Full Local/Offline Pipeline
 
-```bash
-./mvnw test
-./mvnw package
-docker build -t auronix-server .
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-all.ps1
 ```
 
-## Kubernetes Deployment
+`validate-all.ps1` runs:
 
-The manifests can be applied directly when a cluster context is configured:
+1. `git diff --check`.
+2. Maven tests.
+3. Maven package.
+4. `docker compose config --quiet`.
+5. Optional full Compose validation unless `-SkipCompose` is used.
+6. Testcontainers validation.
+7. Docker image build.
+8. Kubernetes offline validation.
+9. Terraform validation.
+10. Optional Kind validation when `-IncludeKind` is supplied.
 
-```bash
-kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/
+## Kubernetes
+
+Offline validation:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-k8s-offline.ps1
 ```
 
-The API service is `auronix-server` in namespace `auronix`.
+Kind validation:
 
-```bash
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-k8s-kind.ps1
+```
+
+Useful Kubernetes checks when a context is intentionally selected:
+
+```powershell
+kubectl rollout status deployment/server -n auronix
+kubectl rollout history deployment/server -n auronix
+kubectl rollout undo deployment/server -n auronix
 kubectl get pods -n auronix
-kubectl get svc -n auronix
 kubectl logs -n auronix deployment/server
 ```
 
-## Terraform Deployment
+## Terraform and AWS Validation
 
-Provision cluster infrastructure first, then the app stack. Review each plan before applying.
+Offline Terraform validation:
 
-```bash
-cd infra/terraform/cluster
-terraform init
-terraform plan
-terraform apply
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-terraform.ps1
 ```
 
-Use the cluster output command to configure kubeconfig, then:
+Connected AWS validation:
 
-```bash
-cd infra/terraform/app
-terraform init
-terraform plan
-terraform apply
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-aws.ps1
 ```
 
-## Troubleshooting Checks
+The AWS script first validates identity with `aws sts get-caller-identity`. If credentials are unavailable or expired, it exits before Terraform plan, EKS, kubeconfig, or kubectl connected operations.
 
-- `/actuator/health` should return health information when the API is reachable.
-- Check Kubernetes readiness and liveness probe results for `server`, `postgres`, `rabbitmq`, and `redis`.
-- Confirm RabbitMQ and Redis URLs match the runtime environment.
-- Confirm the configured CORS origins include the client application origin.
-- For transfer processing, inspect RabbitMQ queues and application logs for consumer activity.
+## Operational Notes
+
+- `/actuator/health/liveness` should reflect the running process.
+- `/actuator/health/readiness` includes dependency readiness when probe groups are enabled.
+- RabbitMQ redeliveries are expected; consumers using the shared wrapper deduplicate by `eventId`.
+- Outbox rows that are `PENDING` or timed-out `PROCESSING` are retried by the scheduler.
+- Redis Pub/Sub notifications are not durable; clients should use HTTP endpoints to recover persisted state after reconnecting.
+- `terraform apply`, `terraform destroy`, and external `kubectl apply` are not part of local validation scripts.

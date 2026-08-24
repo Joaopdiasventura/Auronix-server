@@ -1,43 +1,58 @@
-# Configuracao
+# Configuração
 
-## Propriedades da Aplicacao
+## Propriedades da Aplicação
 
-A aplicacao le configuracoes de runtime por variaveis de ambiente com defaults em `src/main/resources/application.properties`.
+A configuração de runtime vem de variáveis de ambiente com defaults em `src/main/resources/application.properties`.
 
-| Variavel | Finalidade | Obrigatoria para uso similar a producao |
+| Variavel | Finalidade | Default |
 | --- | --- | --- |
-| `PORT` | Porta HTTP do servidor | Opcional |
-| `DATABASE_URL` | URL JDBC do PostgreSQL | Sim |
-| `DATABASE_USERNAME` | Usuario do PostgreSQL | Sim |
-| `DATABASE_PASSWORD` | Senha do PostgreSQL | Sim |
-| `JPA_DDL_AUTO` | Estrategia de schema do Hibernate | Depende do ambiente |
-| `JPA_SHOW_SQL` | Flag de log SQL | Opcional |
-| `JPA_FORMAT_SQL` | Flag de formatacao SQL | Opcional |
-| `SQL_INIT_MODE` | Modo de inicializacao SQL | Opcional |
-| `RABBITMQ_URL` | URL AMQP do RabbitMQ | Sim |
-| `RABBITMQ_RETRY_ENABLED` | Controle de retry do listener | Opcional |
-| `RABBITMQ_RETRY_INITIAL_INTERVAL` | Intervalo inicial de retry | Opcional |
-| `RABBITMQ_RETRY_MAX_ATTEMPTS` | Maximo de tentativas | Opcional |
-| `RABBITMQ_RETRY_MAX_INTERVAL` | Intervalo maximo de retry | Opcional |
-| `RABBITMQ_RETRY_MULTIPLIER` | Multiplicador de retry | Opcional |
-| `REDIS_URL` | URL do Redis | Sim |
-| `APP_INSTANCE_ID` | Id da instancia usado em metadados SSE | Opcional |
-| `CLIENT_URLS` | Origens CORS separadas por ponto e virgula | Sim para clientes publicados |
-| `JWT_SECRET` | Segredo HMAC para assinatura JWT | Sim |
-| `JWT_EXPIRES_IN_MINUTES` | Duracao de expiracao do token | Opcional |
-| `COOKIE_SECURE` | Marca o cookie de autenticacao como secure | Sim para deploys HTTPS |
-| `COOKIE_SAME_SITE` | Configuracao SameSite do cookie | Opcional |
+| `PORT` | Porta HTTP | `8080` |
+| `SERVER_SHUTDOWN` | Modo de shutdown Spring | `graceful` |
+| `SHUTDOWN_TIMEOUT` | Timeout por fase de shutdown | `30s` |
+| `DATABASE_URL` | URL JDBC do PostgreSQL | `jdbc:postgresql://localhost:5432/auronix` |
+| `DATABASE_USERNAME` | Usuario PostgreSQL | `postgres` |
+| `DATABASE_PASSWORD` | Senha PostgreSQL | `postgres` |
+| `JPA_DDL_AUTO` | Estrategia de schema Hibernate | `update` |
+| `JPA_SHOW_SQL` | Log SQL | `true` |
+| `JPA_FORMAT_SQL` | Formatacao SQL | `true` |
+| `SQL_INIT_MODE` | Inicializacao SQL | `never` |
+| `RABBITMQ_URL` | URL AMQP RabbitMQ | `amqp://localhost:5672/` |
+| `RABBITMQ_USERNAME` | Usuario RabbitMQ | `user` |
+| `RABBITMQ_PASSWORD` | Senha RabbitMQ | `user` |
+| `RABBITMQ_RETRY_ENABLED` | Habilita retry de listener | `true` |
+| `RABBITMQ_RETRY_INITIAL_INTERVAL` | Intervalo inicial de retry | `1000` |
+| `RABBITMQ_RETRY_MAX_ATTEMPTS` | Maximo de tentativas de listener | `3` |
+| `RABBITMQ_RETRY_MAX_INTERVAL` | Intervalo máximo de retry | `10000` |
+| `RABBITMQ_RETRY_MULTIPLIER` | Multiplicador de retry | `2` |
+| `REDIS_URL` | URL Redis | `redis://localhost:6379` |
+| `MANAGEMENT_HEALTH_PROBES_ENABLED` | Habilita grupos liveness/readiness | `false` |
+| `MANAGEMENT_HEALTH_LIVENESS_INCLUDE` | Indicadores de liveness | `livenessState` |
+| `MANAGEMENT_HEALTH_READINESS_INCLUDE` | Indicadores de readiness | `readinessState,db,rabbit,redis` |
+| `APP_INSTANCE_ID` | Id da réplica salvo em metadata SSE | UUID aleatorio |
+| `CLIENT_URLS` | Origens CORS separadas por ponto e vírgula | `http://localhost:4200` |
+| `JWT_SECRET` | Segredo HMAC para JWT | `auronix` |
+| `JWT_EXPIRES_IN_MINUTES` | Duracao do JWT | `120` |
+| `COOKIE_SECURE` | Cookie apenas HTTPS | `false` |
+| `COOKIE_SAME_SITE` | Politica SameSite do cookie | `Strict` |
 
-Nao commite secrets de producao. Use secrets da plataforma, Kubernetes Secrets ou outro mecanismo de gestao de segredos para valores sensiveis.
+`app.outbox.enabled`, `app.outbox.batch-size`, `app.outbox.publish-delay-ms` e `app.realtime.redis-subscribe-enabled` também são lidos por componentes, com defaults no código quando ausentes.
 
 ## Docker Compose
 
-O Compose fornece valores locais para banco, RabbitMQ, Redis, opcoes JPA e porta do servidor. Esses valores sao orientados a desenvolvimento e devem ser substituidos em ambientes compartilhados ou similares a producao.
+Compose fornece valores locais:
+
+- `DATABASE_URL=jdbc:postgresql://db:5432/auronix`
+- `RABBITMQ_URL=amqp://message-br:5672/`
+- `REDIS_URL=redis://cache:6379`
+- `MANAGEMENT_HEALTH_PROBES_ENABLED=true`
+- update de schema JPA e log SQL habilitados para iteração local.
+
+Esses valores não são configuração de produção.
 
 ## Kubernetes
 
-`auronix-config` armazena configuracoes nao sensiveis de runtime. `auronix-secrets` define chaves secretas para credenciais de banco, credenciais RabbitMQ e assinatura JWT. Esta documentacao descreve as chaves sem apresentar valores secretos como credenciais recomendadas.
+`auronix-config` contém configurações não sensíveis. `auronix-secrets` contém credenciais de banco, credenciais RabbitMQ e `JWT_SECRET`. A configuração Kustomize de produção usa placeholders para endpoints externos de PostgreSQL, RabbitMQ e Redis e `JPA_DDL_AUTO=validate`.
 
 ## Testes
 
-`src/test/resources/application.properties` usa H2 em modo de compatibilidade com PostgreSQL, desabilita health checks de RabbitMQ e Redis, aponta RabbitMQ e Redis para enderecos locais invalidos e define propriedades de seguranca exclusivas de teste.
+`src/test/resources/application.properties` usa H2 em memória com modo PostgreSQL para a maioria dos testes, desabilita listeners RabbitMQ e health checks Rabbit/Redis, aponta RabbitMQ/Redis para endpoints inválidos, desabilita o publisher da outbox, desabilita a subscription Redis e usa valores de segurança exclusivos de teste.

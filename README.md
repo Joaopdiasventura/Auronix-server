@@ -1,43 +1,52 @@
 # Auronix Server
 
-Auronix Server is a Spring Boot backend for user accounts, wallet-like balances, asynchronous transfers, payment requests, and real-time transaction notifications. The project includes the application code, local container dependencies, Kubernetes manifests, Terraform infrastructure for AWS EKS, automated tests, and a GitHub Actions workflow for validation and Docker image publishing.
+Auronix Server is a Java 26 / Spring Boot 4.0.6 backend for users, accounts, wallet-like balances, asynchronous transfers, payment requests, and realtime transaction notifications. The repository contains the application, Docker Compose local topology, Kubernetes manifests with Kustomize overlays, Terraform infrastructure stacks, validation scripts, automated tests, and GitHub Actions workflow.
 
 ## Main Technologies
 
-- Java 26 and Spring Boot 4.0.6
-- Maven Wrapper
-- Spring Web, Spring Security, Spring Data JPA, Spring AMQP, Spring Data Redis, and Spring Boot Actuator
-- PostgreSQL, RabbitMQ, and Redis
-- Docker and Docker Compose
-- Kubernetes manifests for application and runtime dependencies
-- Terraform for AWS EKS/VPC provisioning and Kubernetes manifest deployment
-- GitHub Actions for CI/CD
-- JUnit, Spring test support, Mockito, AssertJ, MockMvc, and H2
+- PostgreSQL for users, accounts, ledger transactions, payment requests, transactional outbox, and processed-event idempotency records.
+- RabbitMQ for asynchronous domain events: transfer creation, transaction completion, and delayed payment-request expiration.
+- Redis for SSE connection metadata and Redis Pub/Sub fan-out across application replicas.
+- Transactional Outbox for publishing events after the PostgreSQL commit without calling RabbitMQ directly from the business transaction.
+- Idempotent RabbitMQ consumers using `eventId` and the `processed_events` uniqueness constraint.
+- Deterministic pessimistic account locking for transfer settlement.
+- Database check constraints for financial invariants.
+- Docker Compose for local development, Kind/Kustomize for Kubernetes validation, Terraform for AWS EKS and Kubernetes manifest application, and Testcontainers for PostgreSQL integration coverage.
 
 ## Architecture Summary
 
-The backend exposes REST endpoints secured with an HttpOnly JWT cookie. PostgreSQL stores users, accounts, transfers, and payment requests. RabbitMQ handles asynchronous transfer creation, transaction completion notifications, and delayed payment request expiration. Redis stores metadata for Server-Sent Events connections, while active SSE emitters are kept in the running application instance.
-
 ```mermaid
 flowchart TD
-    Client[Client application] --> API[Auronix Spring Boot API]
-    API --> DB[(PostgreSQL)]
-    API --> MQ[(RabbitMQ)]
-    API --> Cache[(Redis)]
-    MQ --> API
-    API --> SSE[Server-Sent Events stream]
-    SSE --> Client
-    Terraform[Terraform] --> EKS[AWS EKS cluster]
-    EKS --> K8s[Kubernetes manifests]
-    K8s --> API
-    K8s --> DB
-    K8s --> MQ
-    K8s --> Cache
+    Client[Client] -->|REST and SSE| API[Auronix replicas]
+    API --> PG[(PostgreSQL)]
+    API --> OB[(Transactional outbox)]
+    OB --> Publisher[Outbox publisher]
+    Publisher --> RMQ[(RabbitMQ)]
+    RMQ --> Consumers[Idempotent consumers]
+    Consumers --> PG
+    Consumers --> OB
+    RMQ --> Notify[Notification consumer]
+    Notify --> Redis[(Redis Pub/Sub)]
+    Redis --> API
+    API --> LocalSSE[Local SSE emitters]
+    LocalSSE --> Client
 ```
+
+A transfer request is validated synchronously and persisted as a `transfer.create` outbox event in the same PostgreSQL transaction. A scheduled publisher claims publishable outbox rows in batches with `FOR UPDATE SKIP LOCKED`, sends them to RabbitMQ, and marks them as published or retries them with backoff. Consumers process RabbitMQ messages at least once and make effects idempotent by inserting `eventId` into `processed_events` inside the same transaction as the business effect.
+
+During settlement, the transfer consumer resolves the payer and payee accounts, locks both accounts with `PESSIMISTIC_WRITE` in deterministic UUID order, rechecks the payer balance, updates balances, writes the ledger entry, and stores a `transaction.completed` event in the outbox. Completion notifications are published through RabbitMQ and then Redis Pub/Sub so every replica receives the notification; only the replica that owns the local `SseEmitter` sends the SSE event.
+
+## Runtime and Infrastructure
+
+Docker Compose is only the local development topology. It starts `server`, `db`, `message-br`, and `cache` with health checks, named volumes for PostgreSQL/RabbitMQ/Redis, Redis AOF, and an internal Compose network.
+
+Kubernetes uses `k8s/base` plus `local`, `staging`, and `production` overlays. Local is for Kind validation and includes in-cluster PostgreSQL, RabbitMQ, and Redis. Production removes those dependency workloads and expects external PostgreSQL, RabbitMQ, and Redis endpoints; the current Terraform does not provision RDS/Aurora, Amazon MQ, or ElastiCache.
+
+Terraform is split into `infra/terraform/cluster` for AWS VPC/EKS/node groups and `infra/terraform/app` for applying the flat production-oriented manifests in `k8s/*.yaml` through the Kubernetes provider. CI validates the application, Testcontainers PostgreSQL test, Docker build, Kubernetes manifests, Terraform, and then publishes a SHA-tagged Docker image. On `main`, the current workflow deploys the image digest to a self-hosted Docker runner, not to EKS.
 
 ## Documentation
 
-Complete English documentation is available in [`docs/en`](docs/en/README.md):
+Detailed documentation is available in [`docs/en`](docs/en/README.md):
 
 - [Architecture](docs/en/architecture/README.md)
 - [Application](docs/en/application/README.md)

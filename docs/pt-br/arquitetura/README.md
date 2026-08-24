@@ -1,115 +1,133 @@
 # Arquitetura
 
-## Visao Geral
+## Visão Geral
 
-Auronix e organizado como um backend Spring Boot em camadas. Controllers HTTP recebem requisicoes, services aplicam regras de negocio, repositories Spring Data persistem entidades no PostgreSQL, a outbox transacional registra eventos no mesmo commit do estado de negocio, RabbitMQ transporta eventos assincronos e Redis distribui notificacoes realtime entre replicas.
+Auronix é um backend Spring Boot em camadas. Controllers recebem requisições HTTP/SSE, services aplicam regras de negócio, repositories Spring Data persistem estado no PostgreSQL, a outbox transacional registra eventos de domínio no mesmo commit das mudanças de negócio, RabbitMQ transporta eventos, consumers idempotentes aplicam efeitos e Redis Pub/Sub distribui notificações realtime entre réplicas.
 
 ```mermaid
 flowchart TD
-    Client[Cliente] --> Controllers[Controllers REST]
-    Controllers --> Services[Services de dominio]
+    Client[Cliente] --> Controllers[Controllers REST e SSE]
+    Controllers --> Services[Services de domínio]
     Services --> Repositories[Repositories Spring Data]
     Repositories --> Postgres[(PostgreSQL)]
-    Services --> Outbox[(Outbox PostgreSQL)]
-    Outbox --> Publisher[Outbox Publisher]
-    Publisher --> Rabbit[(RabbitMQ Direct Exchange)]
+    Services --> Outbox[(outbox_events)]
+    Outbox --> Publisher[Publisher agendado da outbox]
+    Publisher --> Rabbit[(RabbitMQ direct exchange)]
     Rabbit --> Consumers[Consumers RabbitMQ]
-    Consumers --> Idempotency[(Processed Events)]
+    Consumers --> Idempotency[(processed_events)]
     Consumers --> Services
-    Services --> Notifications[Servico de notificacao]
-    Notifications --> RedisPubSub[(Redis Pub/Sub)]
-    RedisPubSub --> SSE[Emitters SSE locais]
+    Consumers --> Notifications[Servico de notificação]
+    Notifications --> Redis[(Redis Pub/Sub)]
+    Redis --> Réplicas[Réplicas Auronix]
+    Réplicas --> SSE[Emitters SSE locais]
     SSE --> Client
 ```
 
-## Componentes Principais
-
-- Modulo de usuarios: cadastro, login, renovacao de token por `/user`, atualizacao de perfil e remocao.
-- Modulo de contas: consulta de conta pelo usuario autenticado e busca de conta por e-mail de usuario.
-- Modulo de transacoes: valida solicitacoes de transferencia, registra eventos de criacao na outbox, liquida transferencias de forma idempotente, bloqueia contas em ordem deterministica, registra ledger e gera evento de conclusao.
-- Modulo de cobrancas: cria cobrancas, consulta cobrancas ativas, registra evento de expiracao na outbox e remove cobrancas expiradas por fluxo atrasado no RabbitMQ.
-- Modulo de notificacoes: expoe stream SSE, publica eventos realtime no Redis Pub/Sub e envia apenas pelas replicas que possuem o emitter local.
-- Seguranca compartilhada: cria e valida JWTs, gera hashes de senha com Argon2 e autentica requisicoes pelo cookie `access_token`.
-- Mensageria compartilhada: persiste `eventId` processado com constraint unica antes do efeito de negocio para obter idempotencia transacional.
-- Outbox compartilhada: persiste eventos com `PENDING`, `PROCESSING` e `PUBLISHED`, usa `FOR UPDATE SKIP LOCKED` para multiplos publishers e faz retry com backoff.
-
-## Fluxos Principais
+## Fluxo de Transferencia
 
 ```mermaid
 sequenceDiagram
     participant C as Cliente
-    participant API as Auronix API
-    participant OB as Outbox
+    participant API as TransactionService HTTP
+    participant PG as PostgreSQL
+    participant OB as outbox_events
+    participant PUB as Outbox publisher
     participant MQ as RabbitMQ
-    participant DB as PostgreSQL
-    participant Redis as Redis Pub/Sub
-    participant SSE as Stream SSE local
+    participant CON as Transfer consumer
+    participant REDIS as Redis Pub/Sub
+    participant SSE as Réplicas SSE
     C->>API: POST /transaction
-    API->>DB: Valida contas de origem e destino
-    API->>OB: Persiste transfer.create na mesma transacao
-    OB->>MQ: Publisher envia evento apos commit
-    MQ->>API: Consome evento de criacao
-    API->>DB: Registra eventId, bloqueia contas, revalida saldo e salva ledger
-    API->>OB: Persiste transaction.completed na mesma transacao
-    OB->>MQ: Publisher envia evento de conclusao
-    MQ->>API: Consome evento de conclusao
-    API->>Redis: Publica notificacao realtime
-    Redis->>SSE: Todas as replicas recebem
-    SSE-->>C: Payload do evento
+    API->>PG: Valida origem, destino, valor e saldo atual
+    API->>OB: Persiste transfer.create na mesma transação
+    PUB->>OB: Reivindica batch com FOR UPDATE SKIP LOCKED
+    PUB->>MQ: Publica transfer.create
+    MQ->>CON: Entrega mensagem
+    CON->>PG: Insere eventId em processed_events
+    CON->>PG: Resolve contas e bloqueia ambas por UUID ordenado
+    CON->>PG: Revalida saldo, atualiza saldos e salva ledger
+    CON->>OB: Persiste transaction.completed na mesma transação
+    PUB->>MQ: Publica transaction.completed
+    MQ->>CON: Entrega evento de notificação de conclusão
+    CON->>REDIS: Publica notificação realtime
+    REDIS->>SSE: Distribui para todas as réplicas
+    SSE-->>C: Emitter local envia evento quando conectado ali
 ```
+
+A ordenação determinística dos locks importa porque transferências concorrentes podem precisar do mesmo par de contas em direções opostas. Ordenar os IDs antes de adquirir locks `PESSIMISTIC_WRITE` faz transações concorrentes pedirem locks na mesma ordem, reduzindo ciclos previsíveis de deadlock. O saldo é checado novamente dentro da transação bloqueada porque a validação HTTP anterior pode ficar obsoleta antes da liquidação pelo consumer.
+
+## Outbox Transacional
+
+`OutboxService.enqueue` exige uma transação existente por `Propagation.MANDATORY`. Assim, a mudança de negócio e a linha de evento são confirmadas ou revertidas juntas no PostgreSQL. A aplicação não usa transação distribuída entre PostgreSQL e RabbitMQ.
+
+Estados da outbox:
+
+- `PENDING`: pronto para publicação quando `next_attempt_at` venceu.
+- `PROCESSING`: reivindicado por um publisher. O claim define `next_attempt_at` cinco minutos no futuro para permitir retry de trabalho abandonado.
+- `PUBLISHED`: envio RabbitMQ concluiu e `published_at` foi definido.
+
+`OutboxPublisher` roda por fixed delay `app.outbox.publish-delay-ms`, default `1000` ms, e reivindica até `app.outbox.batch-size`, default `50`. A query seleciona linhas `PENDING` e `PROCESSING` expiradas, ordena por `created_at` e usa `FOR UPDATE SKIP LOCKED`, permitindo que múltiplas réplicas publiquem em paralelo sem reivindicar as mesmas linhas no mesmo batch. Em falha de envio, a linha volta para `PENDING`, `attempts` aumenta e a próxima tentativa usa backoff exponencial limitado a 300 segundos.
+
+A outbox fornece consistência transacional entre estado de negócio e intenção de publicar. Ela não garante entrega única no RabbitMQ. Se RabbitMQ aceitar uma mensagem e o processo morrer antes de gravar `PUBLISHED`, o evento pode ser publicado novamente.
+
+## Consumers Idempotentes
+
+A entrega RabbitMQ é tratada como at-least-once. `IdempotentMessageService.process` insere `eventId` em `processed_events` usando `on conflict (event_id) do nothing`. A constraint única `uk_processed_events_event_id` garante um único insert bem-sucedido por evento.
+
+O insert e o efeito de negócio rodam na mesma transação Spring. Se a action falha, a transação faz rollback e o registro de `eventId` também, permitindo retry em uma redelivery futura. Se a mesma mensagem chega de novo depois do sucesso, o insert afeta zero linhas, a action é pulada e `rabbitmq_duplicate_messages_total` é incrementada.
+
+Isso não é exactly-once delivery. É entrega at-least-once com efeitos idempotentes para consumers que usam o wrapper compartilhado.
+
+## Invariantes Financeiras
+
+A validação de aplicação rejeita valor inválido de transferência, transferência para a própria conta, contas inexistentes e saldo insuficiente antes de enfileirar o evento. A transação de liquidação repete as checagens críticas enquanto segura os locks.
+
+Invariantes declaradas no nivel PostgreSQL por check constraints JPA:
+
+- `accounts.balance >= 0`.
+- `ledger_transactions.amount > 0`.
+- snapshots de saldo de origem/destino em `ledger_transactions` não negativos.
+- `payment_requests.value > 0`.
+- `payment_requests.expires_at > payment_requests.created_at`.
+
+Validação de aplicação melhora feedback e evita trabalho desnecessário. Constraints de banco são a proteção final do estado persistido.
+
+## Realtime entre Réplicas
 
 ```mermaid
-sequenceDiagram
-    participant C as Cliente
-    participant API as Auronix API
-    participant OB as Outbox
-    participant MQ as RabbitMQ
-    participant DB as PostgreSQL
-    C->>API: POST /payment-request
-    API->>DB: Salva cobranca
-    API->>OB: Persiste evento de expiracao na mesma transacao
-    OB->>MQ: Publisher envia para fila atrasada de expiracao
-    MQ-->>MQ: Aguarda TTL configurado
-    MQ->>API: Encaminha evento de expiracao via dead letter
-    API->>DB: Registra eventId e remove cobranca se estiver expirada
+flowchart TD
+    MQ[RabbitMQ transaction.completed] --> Consumer[NotificationConsumer]
+    Consumer --> Service[NotificationService]
+    Service --> Redis[(Tópico Redis Pub/Sub auronix.realtime.notifications)]
+    Redis --> A[Subscriber réplica A]
+    Redis --> B[Subscriber réplica B]
+    A --> EA[Emitters SSE locais]
+    B --> EB[Emitters SSE locais]
 ```
 
-## Garantias Transacionais
+Objetos `SseEmitter` nunca são compartilhados pelo Redis. Cada réplica mantém emitters ativos em memória local. `SseRegistryService` grava metadata de conexão no Redis com TTL de 30 minutos, e `NotificationService` publica payloads realtime no Redis Pub/Sub. Todas as réplicas inscritas recebem a mensagem; somente réplicas com emitters locais correspondentes enviam o evento SSE.
 
-O PostgreSQL e a fonte de verdade para saldos, ledger, idempotencia e outbox. A aplicacao nao faz transacao distribuida entre PostgreSQL e RabbitMQ. O modelo usado e entrega at-least-once com outbox transacional e consumers idempotentes.
+Redis Pub/Sub não é armazenamento durável com replay. Se um usuário estiver desconectado durante a publicação, o estado durável permanece no PostgreSQL e o cliente deve recuperar por leituras HTTP.
 
-Quando uma operacao de negocio precisa emitir evento, o estado de negocio e o registro em `outbox_events` sao persistidos na mesma transacao PostgreSQL. Se o processo morrer depois do commit e antes do RabbitMQ, o evento continua no banco e sera publicado por um publisher posterior.
+## Métricas de Confiabilidade
 
-O publisher reivindica eventos publicaveis com `FOR UPDATE SKIP LOCKED`, marca registros como `PROCESSING`, publica no RabbitMQ e marca como `PUBLISHED`. Se a publicacao falhar, o evento volta para `PENDING` com `attempts` incrementado e `nextAttemptAt` calculado por backoff.
+Counters Micrometer usados no código:
 
-Se o RabbitMQ receber o evento e o processo morrer antes de marcar a outbox como publicada, pode haver republicacao. Isso e aceitavel porque os consumers persistem `eventId` em `processed_events` com constraint unica dentro da mesma transacao do efeito financeiro.
+| Metrica | Incrementada por | Significado |
+| --- | --- | --- |
+| `outbox_published_total` | `OutboxPublisher` | Mensagens da outbox enviadas ao RabbitMQ e marcadas como publicadas |
+| `outbox_publish_failures_total` | `OutboxPublisher` | Tentativas de envio ao RabbitMQ que falharam e foram reagendadas |
+| `rabbitmq_messages_processed_total` | `IdempotentMessageService` | Mensagens cujo `eventId` foi visto pela primeira vez e cuja action concluiu |
+| `rabbitmq_duplicate_messages_total` | `IdempotentMessageService` | Mensagens redelivered/duplicadas ignoradas pela idempotência |
 
-## Concorrencia Financeira
+O repositório configura os counters no código, mas não inclui Prometheus, Grafana ou dashboards.
 
-Transferencias bloqueiam as duas contas com `PESSIMISTIC_WRITE` em ordem deterministica pelo UUID da conta. As invariantes criticas sao verificadas na transacao que realmente altera os saldos, mesmo que uma validacao anterior no request HTTP ja tenha passado.
+## Modos de Falha
 
-O banco reforca invariantes com constraints para saldo nao negativo, valor de ledger positivo, snapshots de saldo nao negativos, valor de cobranca positivo e expiracao posterior a criacao.
-
-## Realtime Distribuido
-
-Cada replica mantem apenas os `SseEmitter` locais. Quando uma transferencia concluida deve ser notificada, a aplicacao publica uma mensagem realtime no Redis Pub/Sub. Todas as replicas recebem a mensagem e apenas a replica que possui o emitter do usuario envia o SSE.
-
-Redis Pub/Sub nao fornece replay duravel. Se uma conexao SSE cair durante um evento, o cliente deve reconectar e consultar o estado persistido pelos endpoints HTTP.
-
-## Failure Modes
-
-- Banco commitou e o processo morreu antes do RabbitMQ: a outbox permanece no PostgreSQL e outro ciclo do publisher publica posteriormente.
-- RabbitMQ entregou a mesma mensagem duas vezes: o `eventId` unico em `processed_events` impede reaplicar o efeito financeiro.
-- Dois consumers recebem o mesmo evento simultaneamente: apenas um insert atomico vence a constraint unica de `eventId`.
-- Publisher publicou e morreu antes de atualizar a outbox: pode republicar; a idempotencia do consumer preserva a corretude.
-- Duas transferencias concorrem sobre as mesmas contas: locks em ordem deterministica reduzem deadlocks previsiveis e a transacao revalida saldo.
-- SSE esta conectado em outra replica: Redis Pub/Sub entrega a notificacao a todas as replicas e a dona do emitter envia ao cliente.
-- Pod recebe SIGTERM: o servidor usa shutdown graceful e o manifesto Kubernetes usa `preStop` e janela de terminacao para reduzir interrupcoes durante rolling updates.
-- Redis indisponivel: notificacoes realtime podem falhar ou atrasar, mas o estado financeiro confirmado permanece no PostgreSQL.
-- RabbitMQ indisponivel: eventos ficam na outbox e sao tentados novamente com backoff.
-
-## Relacao com Infraestrutura
-
-O Terraform esta dividido em duas stacks. A stack de cluster provisiona VPC e EKS na AWS. A stack de aplicacao le os manifests YAML de `k8s` e os aplica pelo provider Kubernetes do Terraform.
-
-Os manifests Kubernetes usam replicas multiplas para o servidor, probes separados de liveness/readiness, shutdown graceful, HPA com minimo de duas replicas, imagem Auronix por digest e Postgres em `StatefulSet` com PVC para ambiente local ou de desenvolvimento. Para producao AWS, o caminho recomendado continua sendo PostgreSQL externo ao ciclo de vida dos Pods, como RDS ou Aurora, configurado por variaveis e Secrets.
+- Falha antes do commit PostgreSQL: mudança de negócio e linha da outbox fazem rollback juntas.
+- Falha após commit e antes da publicação RabbitMQ: a linha da outbox permanece recuperável para um ciclo posterior.
+- Falha após publicar no RabbitMQ e antes de marcar `PUBLISHED`: o evento pode ser republicado, e consumers idempotentes devem lidar com duplicatas.
+- Redelivery RabbitMQ: consumers com `IdempotentMessageService` ignoram `eventId` já processado.
+- Duas transferências concorrentes: lock pessimista determinístico e revalidação transacional de saldo protegem invariantes financeiras.
+- Múltiplos publishers de outbox: `FOR UPDATE SKIP LOCKED` permite que réplicas reivindiquem linhas diferentes em paralelo.
+- SSE conectado em outra réplica: Redis Pub/Sub transmite para todas as réplicas e a réplica que mantém o emitter local envia ao cliente.
+- Reinício de Pod: shutdown graceful, probes Kubernetes, persistência da outbox e registros de idempotência reduzem perda de trabalho, mas notificações Redis Pub/Sub em voo continuam não duráveis.

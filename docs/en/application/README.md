@@ -2,32 +2,33 @@
 
 ## Project Structure
 
-The application code is under `src/main/java/dev/joaopdias/auronix`.
+Application code lives under `src/main/java/dev/joaopdias/auronix`.
 
-- `config`: Spring Security, CORS, RabbitMQ exchange/queue/binding configuration.
-- `core.user`: user creation, login, profile updates, deletion, DTOs, entity, and repository.
-- `core.account`: account creation and lookup, account entity, DTO, and repository.
-- `core.transaction`: transfer request validation, asynchronous transfer processing, ledger entity, events, producer, consumer, DTOs, and repository.
-- `core.paymentrequest`: payment request creation, active lookup, expiration event, producer, consumer, entity, DTOs, and repository.
-- `shared.security`: request authentication filter and authenticated principal.
-- `shared.services`: password hashing and JWT creation/validation.
-- `shared.notification`: SSE registration, transaction notification delivery, consumer, controller, and DTOs.
+- `config`: Spring Security, CORS, RabbitMQ topology, and Redis Pub/Sub configuration.
+- `core.user`: registration, login, token refresh, profile update, deletion, DTOs, entity, and repository.
+- `core.account`: account creation and lookup, JPA entity, DTO, and repository with pessimistic locking queries.
+- `core.transaction`: transfer validation, asynchronous settlement, ledger entity, events, outbox-backed producer, RabbitMQ consumer, DTOs, and repository.
+- `core.paymentrequest`: payment request creation, active lookup, delayed expiration event, outbox-backed producer, RabbitMQ consumer, entity, DTOs, and repository.
+- `shared.outbox`: transactional event storage, claiming, publishing, retry, and RabbitMQ message creation.
+- `shared.messaging`: processed-event table and idempotent consumer wrapper.
+- `shared.notification`: SSE registry, Redis Pub/Sub notification fan-out, RabbitMQ notification consumer, controller, and DTOs.
+- `shared.security` and `shared.services`: JWT cookie authentication, principal, Argon2 password hashing, and JWT handling.
 
 ## Runtime Responsibilities
 
-The API handles user authentication, account lookup, transfer initiation, asynchronous ledger updates, payment request lifecycle management, and real-time transaction notifications. Monetary values are represented as integer minor units in the observed DTOs and entities.
+The API handles authentication, account lookup, transfer initiation, asynchronous financial settlement, payment request lifecycle management, and realtime transaction notifications. Monetary values are represented as integer minor units in the observed DTOs and entities.
 
 ## Endpoints
 
 | Method | Path | Purpose | Authentication |
 | --- | --- | --- | --- |
 | `POST` | `/user` | Create user, create account, set auth cookie | Public |
-| `POST` | `/user/login` | Authenticate user and set auth cookie | Public |
+| `POST` | `/user/login` | Authenticate and set auth cookie | Public |
 | `POST` | `/user/logout` | Clear auth cookie | Public |
 | `GET` | `/user` | Decode and refresh token, return user | Cookie |
 | `PATCH` | `/user` | Update authenticated user | Cookie |
 | `DELETE` | `/user` | Delete authenticated user | Cookie |
-| `GET` | `/account` | Return authenticated user account | Cookie |
+| `GET` | `/account` | Return authenticated user's account | Cookie |
 | `GET` | `/account/email` | Return account id by user email query parameter | Cookie |
 | `POST` | `/transaction` | Validate and enqueue transfer creation | Cookie |
 | `GET` | `/transaction` | Return pageable transactions for authenticated user | Cookie |
@@ -35,25 +36,28 @@ The API handles user authentication, account lookup, transfer initiation, asynch
 | `POST` | `/payment-request` | Create payment request | Cookie |
 | `GET` | `/payment-request/{id}` | Return active payment request | Cookie |
 | `GET` | `/notifications/stream` | Open SSE notification stream | Cookie |
-| `GET` | `/actuator/health` | Health endpoint for probes | Public |
+| `GET` | `/actuator/health` | Aggregate health endpoint | Public |
+| `GET` | `/actuator/health/liveness` | Kubernetes/container liveness health when probes are enabled | Public |
+| `GET` | `/actuator/health/readiness` | Readiness health including configured dependencies when probes are enabled | Public |
 
 ## Messaging
 
-RabbitMQ uses the direct exchange `auronix.transaction.exchange`.
+RabbitMQ uses the durable direct exchange `auronix.transaction.exchange`.
 
 | Queue | Routing key | Role |
 | --- | --- | --- |
-| `auronix.transfer.create.queue` | `transfer.create` | Asynchronous transfer creation |
-| `auronix.transaction.completed.queue` | `transaction.completed` | Transaction completion notification |
-| `auronix.payment-request.expiration.delay.queue` | `payment-request.expiration.delay` | Delayed payment request expiration |
+| `auronix.transfer.create.queue` | `transfer.create` | Asynchronous transfer settlement trigger |
+| `auronix.transaction.completed.queue` | `transaction.completed` | Transaction completion notification trigger |
+| `auronix.payment-request.expiration.delay.queue` | `payment-request.expiration.delay` | Ten-minute delayed payment request expiration |
 | `auronix.payment-request.expiration.queue` | `payment-request.expiration` | Expired payment request cleanup |
 
-Messages are converted with `JacksonJsonMessageConverter`.
+Domain services do not send RabbitMQ messages directly. Producers write `OutboxEvent` rows, and the scheduled outbox publisher later sends JSON messages with `messageId`, `eventId`, `eventType`, and `aggregateId` metadata.
 
 ## Observed Technical Decisions
 
-- Accounts are created with an initial balance during user registration.
-- Account balances use optimistic locking through a JPA `@Version` field.
-- Transaction completion events are published after database commit.
-- Payment requests expire after ten minutes through a delayed RabbitMQ queue and dead-letter routing.
-- SSE connection metadata is stored in Redis with a 30-minute TTL; active emitters remain local to the application instance.
+- User creation also creates an account.
+- Transfer creation performs synchronous validation, then stores a `transfer.create` event in the outbox.
+- Transfer settlement is asynchronous and revalidates all critical financial checks in the consumer transaction.
+- Account rows use JPA `@Version`; settlement also uses `PESSIMISTIC_WRITE` locks in deterministic account-id order.
+- Payment requests expire through a RabbitMQ delay queue and dead-letter routing.
+- SSE emitters are process-local; Redis stores connection metadata and distributes realtime notifications through Pub/Sub.

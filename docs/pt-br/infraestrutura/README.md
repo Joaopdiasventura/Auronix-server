@@ -1,48 +1,60 @@
 # Infraestrutura
 
-## Local
+## Docker Compose Local
 
-`compose.yaml` e a fonte de verdade para infraestrutura de desenvolvimento local. Ele inicia:
+`compose.yaml` é a topologia local de desenvolvimento. Ele não representa a arquitetura de produção.
 
-- `server`: imagem construida a partir do `Dockerfile`, porta `8080`.
-- `db`: PostgreSQL 17 Alpine, banco `auronix`, porta `5432`, volume persistente nomeado.
-- `message-br`: RabbitMQ 4 management, portas `5672` e `15672`, volume persistente nomeado.
-- `cache`: Redis 8 Alpine, porta `6379`, AOF habilitado e volume persistente nomeado.
+| Servico | Imagem/origem | Portas | Persistencia | Health check |
+| --- | --- | --- | --- | --- |
+| `server` | build local do `Dockerfile` | `8080:8080` | nenhuma | TCP na porta `8080` |
+| `db` | `postgres:17-alpine` | `5432:5432` | `auronix-data` | `pg_isready -U postgres -d auronix` |
+| `message-br` | `rabbitmq:4-management` | `5672:5672`, `15672:15672` | `auronix-rabbitmq` | `rabbitmq-diagnostics ping` e checagem da porta AMQP |
+| `cache` | `redis:8-alpine` | `6379:6379` | `auronix-redis` | `redis-cli ping` |
 
-O Compose tambem define rede dedicada, restart policy e health checks para os servicos criticos. `depends_on` usa condicoes de saude para evitar tratar container apenas `running` como dependencia pronta.
+O server depende de `db`, `message-br` e `cache` saudáveis. As dependências usam `restart: always`; o server usa `restart: unless-stopped`. Redis inicia com persistência AOF por `redis-server --appendonly yes`. Todos os serviços compartilham a rede interna `auronix-local`.
 
-## Imagem
+URLs usadas pelo backend dentro da rede Compose:
 
-O `Dockerfile` usa build multi-stage com Temurin 26:
+- PostgreSQL: `jdbc:postgresql://db:5432/auronix`
+- RabbitMQ: `amqp://message-br:5672/`
+- Redis: `redis://cache:6379`
 
-- etapa de dependencias Maven;
-- etapa de package;
-- extracao por Spring Boot layertools;
-- runtime JRE com usuario nao-root `appuser`.
+## Imagem de Container
 
-A imagem expoe a porta `8080` e inicia a aplicacao via `JarLauncher`.
+O `Dockerfile` usa build multi-stage:
 
-## Producao
+1. Etapa de dependências `eclipse-temurin:26-jdk-jammy` com cache Maven.
+2. Etapa de package com `./mvnw package -DskipTests`.
+3. Extracao via Spring Boot layertools.
+4. Runtime `eclipse-temurin:26-jre-jammy`.
 
-Producao nao e representada pelo Docker Compose. O fluxo esperado e:
+A imagem final roda como usuário não-root `appuser`, expõe `8080` e inicia `org.springframework.boot.loader.launch.JarLauncher`.
 
-```text
-AWS
-|
-Terraform
-|
-EKS
-|
-Kubernetes
+## Topologias Kubernetes
+
+Os manifests Kubernetes existem em duas formas:
+
+- Base e overlays Kustomize em `k8s/base` e `k8s/overlays`.
+- Manifests planos em `k8s/*.yaml`, consumidos por `infra/terraform/app`.
+
+A validação local Kustomize inclui PostgreSQL, RabbitMQ e Redis no cluster. A produção Kustomize remove esses workloads de dependências e espera endpoints externos.
+
+```mermaid
+flowchart TD
+    Local[Docker Compose local] --> LDeps[server db message-br cache]
+    Kind[Kubernetes local Kind] --> KDeps[server mais PostgreSQL RabbitMQ Redis in-cluster]
+    Prod[Kubernetes/EKS produção] --> Server[Workloads Auronix]
+    Server --> External[(Endpoints externos PostgreSQL RabbitMQ Redis)]
 ```
 
-A stack `infra/terraform/cluster` provisiona VPC e EKS. A stack `infra/terraform/app` aplica os manifests de workloads da aplicacao no cluster Kubernetes existente.
+## AWS e Terraform
 
-PostgreSQL, RabbitMQ e Redis de producao nao sao criados pelo ciclo de vida dos Pods da aplicacao. Os manifests de producao recebem endpoints externos por ConfigMap/Secret. Se RDS/Aurora, Amazon MQ ou ElastiCache forem adotados, isso deve entrar em Terraform explicitamente em uma etapa propria.
+`infra/terraform/cluster` provisiona VPC e EKS na AWS. `infra/terraform/app` aplica recursos Kubernetes a partir do conjunto plano `k8s/*.yaml`. O Terraform atual não declara RDS/Aurora, Amazon MQ, ElastiCache ou equivalentes gerenciados de PostgreSQL/RabbitMQ/Redis.
 
 ## Limites Atuais
 
-- Terraform ainda nao provisiona RDS/Aurora.
-- Terraform ainda nao provisiona RabbitMQ gerenciado.
-- Terraform ainda nao provisiona Redis gerenciado.
-- Os manifests locais de Postgres, RabbitMQ e Redis existem para validacao Kubernetes local, nao como arquitetura produtiva.
+- Docker Compose é apenas local.
+- Manifests Kubernetes de produção exigem endpoints externos de banco, broker e Redis.
+- Terraform não provisiona PostgreSQL, RabbitMQ ou Redis gerenciados.
+- Redis Pub/Sub é fan-out realtime, não armazenamento durável de notificações.
+- Kind valida comportamento de workloads em cluster local descartável, mas não substitui validação em EKS.

@@ -1,100 +1,94 @@
 # Kubernetes
 
-## Estrutura
+## Layout
 
 ```text
 k8s/
 |-- base/
-`-- overlays/
-    |-- local/
-    |-- staging/
-    `-- production/
+|-- overlays/
+|   |-- local/
+|   |-- staging/
+|   `-- production/
+`-- *.yaml
 ```
 
-Os manifests planos em `k8s/*.yaml` continuam presentes para compatibilidade com a stack Terraform da aplicacao. A estrutura Kustomize e usada para renderizar e validar ambientes sem depender de AWS.
+`k8s/base` define os recursos Kustomize compartilhados: namespace, formato de Secret, ConfigMap, PostgreSQL, RabbitMQ, Redis, metrics-server, Deployment/Service do server e HPA. Os overlays ajustam essa base para local, staging e produção. Os manifests planos `k8s/*.yaml` permanecem porque `infra/terraform/app` lê esse conjunto diretamente.
 
-## Ambientes
+## Workload Base
 
-`local` serve apenas para validacao Kubernetes. Ele usa `server-server:latest` com `imagePullPolicy: Never` e inclui Postgres, RabbitMQ e Redis dentro do cluster descartavel.
+O deployment do server tem duas réplicas por padrão, `terminationGracePeriodSeconds: 45`, `preStop` com sleep de 10 segundos, requests de `250m` CPU e `512Mi`, limits de `750m` CPU e `1Gi`, e Service `LoadBalancer` mapeando a porta `80` para a porta `8080` do container.
 
-`staging` preserva a topologia de base com limites menores de replicas.
+A imagem é fixada por digest nos placeholders de base e produção:
 
-`production` remove Postgres, RabbitMQ e Redis in-cluster e aponta a aplicacao para endpoints externos. A imagem de producao nao deve usar `latest`; use tag por SHA ou digest imutavel.
+```text
+jpplay/auronix-server@sha256:0000000000000000000000000000000000000000000000000000000000000000
+```
+
+Esse placeholder deve ser substituído por um digest imutável real antes de uso.
 
 ## Probes
 
-O deployment da API usa:
+O server usa probes separados:
 
-- `startupProbe` em `/actuator/health/liveness`.
-- `livenessProbe` em `/actuator/health/liveness`.
-- `readinessProbe` em `/actuator/health/readiness`.
+- `startupProbe`: `GET /actuator/health/liveness`, com threshold longo para inicialização lenta.
+- `livenessProbe`: `GET /actuator/health/liveness`, reinicia o container quando o processo fica unhealthy.
+- `readinessProbe`: `GET /actuator/health/readiness`, remove o Pod dos endpoints de serviço quando dependências de readiness estão indisponíveis.
 
-Liveness deve indicar se o processo esta vivo. Readiness deve impedir trafego antes de a instancia aceitar requisicoes. Startup probe protege inicializacoes mais lentas para nao acionar liveness cedo demais.
+A configuração da aplicação inclui indicadores de readiness `readinessState,db,rabbit,redis`. Liveness é intencionalmente mais estreito que readiness.
 
-## Validacao Offline
+## Overlays
+
+### Local
+
+`k8s/overlays/local` serve para validação Kubernetes local com Kind. Ele mantém PostgreSQL, RabbitMQ e Redis no cluster, define a imagem do server como `auronix-server:kind-v1`, mantém `imagePullPolicy: IfNotPresent`, muda o Service para `ClusterIP`, configura uma réplica do server, reduz o mínimo do HPA para 1 e habilita update de schema JPA e log SQL locais.
+
+### Staging
+
+`k8s/overlays/staging` atualmente apenas reduz o deployment do server para uma réplica e define limites do HPA entre 1 e 3. No restante, herda a topologia da base, incluindo PostgreSQL, RabbitMQ e Redis dentro do cluster.
+
+### Produção
+
+`k8s/overlays/production` remove workloads PostgreSQL, RabbitMQ e Redis da base e define placeholders de endpoints externos:
+
+- `DATABASE_URL=jdbc:postgresql://REPLACE_WITH_RDS_ENDPOINT:5432/auronix`
+- `RABBITMQ_URL=amqp://REPLACE_WITH_RABBITMQ_ENDPOINT:5672/`
+- `REDIS_URL=redis://REPLACE_WITH_REDIS_ENDPOINT:6379`
+
+O overlay remove cada recurso de dependência com arquivos `$patch: delete` separados para StatefulSet/Deployment e Service:
+
+- `delete-postgres-statefulset.yaml`
+- `delete-postgres-service.yaml`
+- `delete-rabbitmq-deployment.yaml`
+- `delete-rabbitmq-service.yaml`
+- `delete-redis-deployment.yaml`
+- `delete-redis-service.yaml`
+
+Essa separação é o formato atual depois da correção do delete em Kustomize de produção. Produção mantém duas réplicas do server e o placeholder de imagem fixada por digest. RDS/Aurora, Amazon MQ e ElastiCache são candidatos naturais para endpoints externos, mas não são provisionados atualmente neste repositório.
+
+## Validação Offline
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\validate-k8s-offline.ps1
 ```
 
-O script renderiza `local`, `staging` e `production` com `kubectl kustomize` em `target/k8s` e valida os YAMLs com `kubeconform`. Ele nao usa `aws eks update-kubeconfig`, nao acessa EKS e nao exige credenciais AWS.
+O script renderiza `local`, `staging` e `production` com `kubectl kustomize` em `target/k8s/*.yaml` e valida os manifests renderizados com `kubeconform`. Ele usa ferramentas locais ou uma imagem Docker do kubeconform. Não exige credenciais AWS nem cluster EKS.
 
-## Validacao Local Real
-
-Ferramenta escolhida: kind.
+## Validação Kind
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\validate-k8s-kind.ps1
 ```
 
-Fluxo:
+O script Kind exige Docker, `kubectl` e `kind`. Ele constrói duas imagens locais, cria ou reutiliza um cluster Kind, carrega as duas imagens, aplica `k8s/overlays/local`, aguarda rollouts de PostgreSQL/RabbitMQ/Redis/server, checa Pods, verifica probes, valida conectividade das dependências e checa `/actuator/health`, `/actuator/health/liveness` e `/actuator/health/readiness` por port-forward.
 
-```text
-docker build
-|
-kind create cluster
-|
-kind load docker-image
-|
-kubectl apply -k k8s/overlays/local
-|
-rollout status
-|
-port-forward
-|
-health/readiness/liveness
-|
-rollout restart
-|
-rollout history
-|
-rollout undo
-|
-delete pod
-|
-rollout status
-```
+Ele também exercita deleção/recriação de Pod, observação de log de graceful shutdown do Spring, rolling update para a segunda imagem, rollout history, rollback/undo, falha de readiness quando PostgreSQL é escalado para zero e escala do server para três réplicas. Isso testa comportamento real dos workloads em um cluster Kubernetes local descartável, não apenas validade de YAML.
 
-Use `-Destroy` para destruir o cluster ao final.
-
-## Validacao EKS
-
-Com credenciais validas:
+## Validação AWS Conectada
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\validate-aws.ps1
 ```
 
-O script valida account, ARN, regiao, cluster e workspace antes de comandos conectados. Depois executa `terraform plan`, `aws eks describe-cluster`, `aws eks update-kubeconfig`, `kubectl cluster-info`, `kubectl get nodes`, `kubectl get namespaces`, `kubectl apply --dry-run=server` e `kubectl diff`.
+Esse script é o caminho de validação conectada. Ele primeiro executa `aws sts get-caller-identity`; se as credenciais estiverem indisponíveis ou expiradas, imprime uma mensagem de skip e sai com código 2 antes de ações EKS ou Kubernetes. Com credenciais válidas, imprime account, ARN, região e cluster, executa Terraform `init`, mostra o workspace, cria um arquivo de plan, descreve o cluster EKS, atualiza kubeconfig, checa `kubectl cluster-info`, lista nodes e namespaces, executa dry-run server-side para `k8s/overlays/production` e executa `kubectl diff`.
 
-`kubectl diff` retornar diferencas nao e falha por si so. Falha e erro de acesso, schema, admission ou comando.
-
-## Rollback
-
-```powershell
-kubectl rollout history deployment/server -n auronix
-kubectl rollout undo deployment/server -n auronix
-kubectl rollout status deployment/server -n auronix
-```
-
-Rollback depende de imagem anterior ainda disponivel no registry. Por isso producao deve usar tag por SHA ou digest.
+Não confunda isso com validação offline: ela exige credenciais AWS e um cluster de destino existente.

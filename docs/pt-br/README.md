@@ -1,20 +1,22 @@
-# Documentacao do Auronix Server
+# Documentação do Auronix Server
 
-Esta documentacao descreve o backend Auronix com base nos arquivos presentes no repositorio. Ela cobre comportamento da aplicacao, infraestrutura, deploy, configuracao, testes automatizados, CI/CD, operacao e seguranca.
+Esta documentação descreve o backend Auronix atual a partir da implementação do repositório. Código, manifests, scripts, stacks Terraform, testes e workflow GitHub Actions são a fonte de verdade.
 
-## Topicos
+## Tópicos
 
 - [Arquitetura](arquitetura/README.md)
-- [Aplicacao](aplicacao/README.md)
+- [Aplicação](aplicacao/README.md)
 - [Infraestrutura](infraestrutura/README.md)
 - [Kubernetes](kubernetes/README.md)
 - [Terraform](terraform/README.md)
-- [Configuracao](configuracao/README.md)
+- [Configuração](configuracao/README.md)
 - [Testes](testes/README.md)
 - [CI/CD](ci-cd/README.md)
-- [Operacao](operacao/README.md)
-- [Seguranca](seguranca/README.md)
+- [Operação](operacao/README.md)
+- [Segurança](seguranca/README.md)
 
 ## Resumo do Projeto
 
-Auronix e implementado como uma API Java 26 com Spring Boot 4.0.6. O projeto usa PostgreSQL para persistencia, RabbitMQ para eventos de dominio assincronos, Redis para metadados de conexoes SSE, Docker Compose para dependencias locais, manifests Kubernetes para deploy em cluster e Terraform para provisionamento de AWS EKS e recursos Kubernetes.
+Auronix é uma API Java 26 com Spring Boot 4.0.6 apoiada por PostgreSQL, RabbitMQ e Redis. O PostgreSQL é a fonte de verdade para estado financeiro, outbox transacional e registros de idempotência de eventos processados. RabbitMQ transporta eventos de domínio assíncronos. Redis é usado para metadata de conexões SSE e distribuição Pub/Sub entre réplicas.
+
+Desenvolvimento local usa Docker Compose. Kubernetes é organizado com base Kustomize e overlays para validação local, staging e produção. Terraform é dividido em uma stack AWS de cluster e uma stack Kubernetes de aplicação. Os manifests Kubernetes de produção esperam endpoints externos de PostgreSQL, RabbitMQ e Redis; esses serviços gerenciados não são provisionados pelo Terraform atual.

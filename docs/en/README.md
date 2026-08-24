@@ -1,6 +1,6 @@
 # Auronix Server Documentation
 
-This documentation describes the Auronix backend using the files present in the repository. It covers application behavior, infrastructure, deployment, configuration, automated tests, CI/CD, operations, and security.
+This documentation describes the current Auronix backend from the repository implementation. The code, manifests, scripts, Terraform stacks, tests, and GitHub Actions workflow are the source of truth.
 
 ## Topics
 
@@ -17,4 +17,6 @@ This documentation describes the Auronix backend using the files present in the 
 
 ## Project Snapshot
 
-Auronix is implemented as a Java 26 Spring Boot 4.0.6 API. It uses PostgreSQL for persistence, RabbitMQ for asynchronous domain events, Redis for SSE connection metadata, Docker Compose for local dependencies, Kubernetes manifests for cluster deployment, and Terraform for AWS EKS and Kubernetes resource provisioning.
+Auronix is a Java 26 Spring Boot 4.0.6 API backed by PostgreSQL, RabbitMQ, and Redis. PostgreSQL is the source of truth for financial state, the transactional outbox, and processed-event idempotency records. RabbitMQ carries asynchronous domain events. Redis is used for SSE connection metadata and Pub/Sub distribution between replicas.
+
+Local development uses Docker Compose. Kubernetes is organized with Kustomize base and overlays for local, staging, and production validation. Terraform is split into an AWS cluster stack and a Kubernetes app stack. Production Kubernetes manifests expect external PostgreSQL, RabbitMQ, and Redis endpoints; those managed services are not provisioned by the current Terraform.

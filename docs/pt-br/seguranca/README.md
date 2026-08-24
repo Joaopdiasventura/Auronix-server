@@ -1,39 +1,41 @@
-# Seguranca
+# Segurança
 
-## Autenticacao
+## Autenticação
 
-A autenticacao e baseada em um cookie HttpOnly chamado `access_token`. Criacao de usuario e login criam um JWT e definem o cookie. Logout limpa o cookie. O endpoint `GET /user` decodifica o token atual e emite um cookie renovado.
+A autenticação é baseada em um cookie HttpOnly chamado `access_token`. Criação de usuário e login criam um JWT e definem o cookie. Logout limpa o cookie. `GET /user` decodifica o token atual e emite um cookie renovado.
 
-JWTs sao assinados com HMAC SHA-256 usando `JWT_SECRET`. O payload inclui subject, issued-at e timestamps de expiracao. Senhas sao armazenadas com hash pelo password encoder Argon2 do Spring Security.
+JWTs são assinados com HMAC SHA-256 usando `JWT_SECRET`. O payload inclui subject, issued-at e timestamps de expiração. Senhas são armazenadas com hash pelos defaults do password encoder Argon2 do Spring Security.
 
-## Autorizacao
+## Autorização
 
 O Spring Security permite:
 
 - `/actuator/health`
+- `/actuator/health/**`, incluindo grupos de liveness e readiness
 - `POST /user`
 - `POST /user/login`
 - `POST /user/logout`
-- Todas as requisicoes `OPTIONS`
+- todas as requisições `OPTIONS`
 
-Todas as demais rotas exigem autenticacao pelo filtro JWT.
+Todas as demais rotas exigem autenticação pelo filtro JWT.
 
 ## Cookies e CORS
 
-O cookie de autenticacao e HttpOnly, path `/` e configuravel por:
+O cookie de autenticação é HttpOnly, usa path `/` e é configurável por:
 
 - `COOKIE_SECURE`
 - `COOKIE_SAME_SITE`
 
-As origens CORS sao configuradas por `CLIENT_URLS`, separadas por ponto e virgula. Os metodos permitidos sao `GET`, `POST`, `PUT`, `PATCH`, `DELETE` e `OPTIONS`; credenciais sao permitidas.
+As origens CORS são configuradas por `CLIENT_URLS`, separadas por ponto e vírgula. Os métodos configurados são `GET`, `POST`, `PUT`, `PATCH`, `DELETE` e `OPTIONS`; credenciais são permitidas; os headers expostos são `Authorization` e `Content-Disposition`.
 
 ## Secrets
 
-Configuracoes sensiveis sao esperadas por variaveis de ambiente ou chaves Kubernetes Secret. O manifest Kubernetes define os nomes de chaves esperados para credenciais de banco, credenciais RabbitMQ e assinatura JWT. Deploys similares a producao devem fornecer valores especificos do ambiente por um processo seguro de gestao de segredos.
+Valores sensíveis são esperados por variáveis de ambiente ou chaves Kubernetes Secret. Os manifests definem chaves para credenciais de banco, credenciais RabbitMQ e assinatura JWT. Ambientes similares a produção devem substituir todos os placeholders e usar um `JWT_SECRET` forte e específico do ambiente.
 
-## Consideracoes Operacionais
+## Considerações Operacionais
 
-- CSRF esta desabilitado na configuracao Spring Security observada, um tradeoff comum em APIs quando autenticacao e comportamento do cliente sao controlados de forma intencional.
-- Para deploys HTTPS, configure `COOKIE_SECURE` como true para que navegadores enviem o cookie de autenticacao apenas por transporte seguro.
-- Use um `JWT_SECRET` forte e especifico do ambiente; nao reutilize placeholders de desenvolvimento.
-- Mantenha origens CORS limitadas a aplicacoes cliente confiaveis.
+- CSRF está desabilitado na configuração Spring Security observada.
+- Para deploys HTTPS, configure `COOKIE_SECURE=true`.
+- Mantenha `CLIENT_URLS` limitado a origens de clientes confiáveis.
+- Endpoints de health são públicos porque Kubernetes e checks de container precisam de acesso sem autenticação.
+- Credenciais de dependências de produção não são criadas pelo Terraform no repositório atual.
